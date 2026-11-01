@@ -15,7 +15,14 @@ const firebaseConfigs = {
     messagingSenderId: '229036615635',
     appId: '1:229036615635:web:9620d10282b4aea323f126',
   },
-  stage: null,
+  stage: {
+    apiKey: 'AIzaSyA3mDVtqQY_RAXqkasx_7jLwvTb2CIVyGs',
+    authDomain: 'svln-paradise-stage.firebaseapp.com',
+    projectId: 'svln-paradise-stage',
+    storageBucket: 'svln-paradise-stage.firebasestorage.app',
+    messagingSenderId: '407357496075',
+    appId: '1:407357496075:web:7b996fdf7c962e0f00600e',
+  },
 };
 
 export const firebaseConfig = firebaseConfigs[ENV];
