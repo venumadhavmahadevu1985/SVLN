@@ -77,6 +77,27 @@ function toast(msg, kind = 'ok') {
   toast.timer = setTimeout(() => (t.className = ''), 3200);
 }
 
+// Firebase errors arrive as "Firebase: Error (auth/…)"; show residents something they can act on.
+const AUTH_MESSAGES = {
+  'auth/email-already-in-use': 'An account with this email already exists. Use Sign in instead.',
+  'auth/invalid-credential': 'Email or password is wrong. New here? Use Create account.',
+  'auth/invalid-login-credentials': 'Email or password is wrong. New here? Use Create account.',
+  'auth/wrong-password': 'Wrong password. Try again.',
+  'auth/user-not-found': 'No account with this email. Use Create account.',
+  'auth/weak-password': 'Password must be at least 6 characters.',
+  'auth/invalid-email': 'That email address doesn\'t look right.',
+  'auth/too-many-requests': 'Too many attempts. Please wait a few minutes and try again.',
+  'auth/popup-closed-by-user': 'Google sign-in was closed before finishing.',
+  'auth/popup-blocked': 'The browser blocked the Google sign-in window. Allow pop-ups and try again.',
+  'auth/network-request-failed': 'No internet connection. Check your network and try again.',
+  'auth/unauthorized-domain': 'This website address is not allowed to sign in yet. Please tell the treasurer.',
+  'permission-denied': 'You don\'t have permission to do that.',
+};
+function friendlyError(err) {
+  const code = err?.code || String(err?.message || '').match(/\(([^)]+)\)/)?.[1];
+  return AUTH_MESSAGES[code] || err?.message || String(err);
+}
+
 async function copyText(text, msg = 'Copied — paste it in WhatsApp') {
   try { await navigator.clipboard.writeText(text); }
   catch {
@@ -1254,7 +1275,7 @@ function bindEvents() {
     if (!fn) return;
     e.preventDefault();
     try { await fn(el.dataset, el); }
-    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('input', e => {
     const key = e.target.dataset?.filter;
@@ -1266,16 +1287,19 @@ function bindEvents() {
     const t = e.target;
     if (!t.dataset.change) return;
     try { await CHANGES[t.dataset.change](t.value, t); }
-    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('submit', async e => {
     const form = e.target.closest('form[data-form]');
     if (!form) return;
     e.preventDefault();
+    // Read the form (including which button was pressed) before disabling that button:
+    // disabled buttons are left out of FormData.
+    const fd = new FormData(form, e.submitter);
     const btn = e.submitter;
     if (btn) btn.disabled = true;
-    try { await FORMS[form.dataset.form](new FormData(form, e.submitter), form); }
-    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    try { await FORMS[form.dataset.form](fd, form); }
+    catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
     finally { if (btn) btn.disabled = false; }
   });
   $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
@@ -1322,7 +1346,7 @@ async function boot() {
   renderBrand();
   store.onAuth(async fbUser => {
     try { await onAuthChange(fbUser); }
-    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
 }
 
