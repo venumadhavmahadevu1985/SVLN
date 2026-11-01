@@ -376,6 +376,7 @@ function viewDashboard() {
   return `
     <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div>
       ${isAdmin() ? `<div class="actions"><button class="btn ghost" data-action="add-notice">${icon('megaphone')}<span>Post notice</span></button></div>` : ''}</div>
+    ${installBanner()}
     ${store.demo ? `<div class="banner info">${icon('home')}<div><strong>Demo with sample data</strong>
       <span>Use “View as” at the top to switch between the treasurer and a resident. Try anything — changes are not saved and reset when you reload.</span></div></div>` : ''}
     ${waiting.length ? `<a class="banner warn" href="#/settings">${icon('home')}<div>
@@ -942,7 +943,7 @@ function slipHtml(e) {
   return `
     <article class="slip">
       <header class="st-head">
-        <div><img src="icon.svg" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
+        <div><img src="icons/icon-192.png" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
         <div class="st-title"><strong>Salary slip</strong><span>${monthLabel(p.month, true)}</span><small>${slipNo(e)}</small></div>
       </header>
       <dl class="details">
@@ -1006,7 +1007,7 @@ function viewReports() {
 
 function statementHeader(title, sub) {
   return `<header class="st-head">
-    <div><img src="icon.svg" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
+    <div><img src="icons/icon-192.png" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
     <div class="st-title"><strong>${esc(title)}</strong><span>${esc(sub)}</span></div></header>`;
 }
 
@@ -1286,20 +1287,50 @@ async function importData(file) {
 function renderNotConfigured() {
   renderBare(`
     <section class="auth card">
-      <img src="icon.svg" alt="" width="64" height="64">
+      <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>Not connected yet</h1>
       <p>This ${ENV} copy of the site isn't connected to its Firebase database yet.</p>
       <p class="muted">Add the Firebase web app config for <strong>${ENV}</strong> in <code>docs/js/config.js</code>. See the README.</p>
     </section>`);
 }
 
+// ---------- install as a phone app ----------
+// Android/Chrome offer installation through `beforeinstallprompt`; iPhone Safari has no prompt, so iPhone
+// users get the "Share → Add to Home Screen" steps instead. Hidden once installed or dismissed.
+let installEvent = null;
+const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIPhone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+function installBanner() {
+  if (isInstalled() || lsGet('svln-install-dismissed')) return '';
+  const later = '<button type="button" class="btn ghost sm" data-action="dismiss-install">Not now</button>';
+  if (installEvent) {
+    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
+      <strong>Install the SVLN app</strong><span>Open it from your home screen, like any other app.</span>
+      <div class="row-btns"><button type="button" class="btn primary sm" data-action="install-app">Install</button>${later}</div></div></div>`;
+  }
+  if (isIPhone()) {
+    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
+      <strong>Add SVLN to your home screen</strong><span>In Safari, tap the Share button <b aria-hidden="true">⎙</b>, then “Add to Home Screen”.</span>
+      <div class="row-btns">${later}</div></div></div>`;
+  }
+  return '';
+}
+
+// Re-draw whichever screen is showing so the install banner appears or disappears.
+function refreshInstallBanner() {
+  if (S.user && S.hasSettings && !document.body.classList.contains('bare')) rerender();
+  else if (!S.user && $view.querySelector('form[data-form="login"]')) renderLogin();
+}
+
 function renderLogin() {
   renderBare(`
     <section class="auth card">
-      <img src="icon.svg" alt="" width="64" height="64">
+      <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>${esc(S.info?.name || 'Maintenance accounts')}</h1>
       ${S.info?.address ? `<p class="muted">${esc(S.info.address)}</p>` : ''}
       <p>${S.info ? 'Sign in to see the maintenance accounts.' : 'Sign in to set up your society\'s accounts.'}</p>
+      ${installBanner()}
       <button class="btn primary block" data-action="login-google">Continue with Google</button>
       <div class="or"><span>or use email</span></div>
       <form data-form="login" class="stack">
@@ -1332,7 +1363,7 @@ function renderSetup() {
 function renderPending() {
   renderBare(`
     <section class="auth card">
-      <img src="icon.svg" alt="" width="64" height="64">
+      <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>${S.user.requestedFlat ? 'Waiting for approval' : 'Which flat is yours?'}</h1>
       <p>You're signed in as <strong>${esc(S.user.email)}</strong>.
         ${S.user.requestedFlat ? `You asked to join <strong>Flat ${esc(S.user.requestedFlat)}</strong>. The treasurer will approve it soon. You can change the details below if needed.`
@@ -1349,7 +1380,7 @@ function renderPending() {
 function renderNotReady() {
   renderBare(`
     <section class="auth card">
-      <img src="icon.svg" alt="" width="64" height="64">
+      <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>Not set up yet</h1>
       <p>The treasurer hasn't finished setting up the accounts. Please check back later.</p>
     </section>`);
@@ -1358,6 +1389,16 @@ function renderNotReady() {
 // ---------- event wiring ----------
 const ACTIONS = {
   'close-modal': closeModal,
+  async 'install-app'() {
+    const e = installEvent;
+    installEvent = null;
+    if (!e) return;
+    await e.prompt();
+    const choice = await e.userChoice;
+    refreshInstallBanner();
+    if (choice?.outcome === 'accepted') toast('SVLN app installed');
+  },
+  'dismiss-install': () => { lsSet('svln-install-dismissed', '1'); refreshInstallBanner(); },
   theme() {
     const root = document.documentElement;
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1587,6 +1628,8 @@ async function boot() {
   if (theme) document.documentElement.dataset.theme = theme;
   bindEvents();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; refreshInstallBanner(); });
+  window.addEventListener('appinstalled', () => { installEvent = null; refreshInstallBanner(); });
   if (!store) return renderNotConfigured();
   try {
     await store.init();

@@ -1,13 +1,25 @@
 {
-  "name": "Apartment Maintenance",
-  "short_name": "Maintenance",
-  "description": "Apartment maintenance collections, expenses and monthly statements.",
-  "start_url": "./",
+  "id": "./",
+  "name": "SVLN Paradise",
+  "short_name": "SVLN",
+  "description": "SVLN Paradise maintenance: collections, expenses, dues, staff and monthly statements.",
+  "lang": "en-IN",
+  "start_url": "./#/dashboard",
   "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#faf6ec",
-  "theme_color": "#6d8216",
+  "theme_color": "#7a8f1c",
+  "categories": ["finance", "lifestyle", "utilities"],
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "My flat / Dues", "short_name": "Dues", "url": "./#/dues", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Expenses", "url": "./#/expenses", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Monthly statement", "short_name": "Reports", "url": "./#/reports", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }
