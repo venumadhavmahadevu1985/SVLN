@@ -1295,26 +1295,42 @@ function renderNotConfigured() {
 }
 
 // ---------- install as a phone app ----------
-// Android/Chrome offer installation through `beforeinstallprompt`; iPhone Safari has no prompt, so iPhone
-// users get the "Share → Add to Home Screen" steps instead. Hidden once installed or dismissed.
+// Chrome only offers one-tap install (`beforeinstallprompt`) after the visitor has tapped the page and stayed
+// a little while, apps' built-in browsers (WhatsApp, Facebook…) can't install at all, and on iPhone only
+// Safari can add to the home screen. So phones always get the steps that work for their browser, and the
+// one-tap Install button is added whenever Chrome offers it.
 let installEvent = null;
+const UA = () => navigator.userAgent;
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const isIPhone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isIPhone = () => /iphone|ipad|ipod/i.test(UA());
+const isAndroid = () => /android/i.test(UA());
+const isInAppBrowser = () => /\bwv\b|FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat/i.test(UA());
+const isIPhoneOtherBrowser = () => isIPhone() && /CriOS|FxiOS|EdgiOS|OPiOS/i.test(UA());
+
+// What this visitor should do to install, or null on computers where the browser shows its own install icon.
+function installHelp() {
+  if (installEvent) return { title: 'Install the SVLN app', text: 'Open it from your home screen, like any other app.', oneTap: true };
+  if (isIPhone()) {
+    return isInAppBrowser() || isIPhoneOtherBrowser()
+      ? { title: 'Add SVLN to your home screen', text: 'Open this page in Safari first (tap ⋯ or the compass icon → “Open in Safari”). Then tap Share ⎙ → “Add to Home Screen”.' }
+      : { title: 'Add SVLN to your home screen', text: 'Tap the Share button ⎙ at the bottom, then “Add to Home Screen” → “Add”.' };
+  }
+  if (isAndroid()) {
+    return isInAppBrowser()
+      ? { title: 'Install the SVLN app', text: 'Open this page in Chrome first: tap ⋮ (top right) → “Open in Chrome”. Then tap ⋮ → “Install app” or “Add to Home screen”.' }
+      : { title: 'Install the SVLN app', text: 'Tap the browser menu ⋮ (top right) → “Install app” or “Add to Home screen”. Opened from WhatsApp? First tap ⋮ → “Open in Chrome”.' };
+  }
+  return null;
+}
 
 function installBanner() {
   if (isInstalled() || lsGet('svln-install-dismissed')) return '';
-  const later = '<button type="button" class="btn ghost sm" data-action="dismiss-install">Not now</button>';
-  if (installEvent) {
-    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
-      <strong>Install the SVLN app</strong><span>Open it from your home screen, like any other app.</span>
-      <div class="row-btns"><button type="button" class="btn primary sm" data-action="install-app">Install</button>${later}</div></div></div>`;
-  }
-  if (isIPhone()) {
-    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
-      <strong>Add SVLN to your home screen</strong><span>In Safari, tap the Share button <b aria-hidden="true">⎙</b>, then “Add to Home Screen”.</span>
-      <div class="row-btns">${later}</div></div></div>`;
-  }
-  return '';
+  const h = installHelp();
+  if (!h) return '';
+  return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
+    <strong>${h.title}</strong><span>${h.text}</span>
+    <div class="row-btns">${h.oneTap ? '<button type="button" class="btn primary sm" data-action="install-app">Install</button>' : ''}
+      <button type="button" class="btn ghost sm" data-action="dismiss-install">Not now</button></div></div></div>`;
 }
 
 // Re-draw whichever screen is showing so the install banner appears or disappears.
@@ -1392,6 +1408,7 @@ const ACTIONS = {
   async 'install-app'() {
     const e = installEvent;
     installEvent = null;
+    closeModal();
     if (!e) return;
     await e.prompt();
     const choice = await e.userChoice;
@@ -1406,8 +1423,18 @@ const ACTIONS = {
     lsSet('svln-theme', root.dataset.theme);
   },
   more() {
+    const h = !isInstalled() && installHelp();
     openModal('More', `<nav class="sheet">${navItems().slice(4).map(([id, label, ic]) =>
-      `<a href="#/${id}" data-action="nav" class="${S.route === id ? 'active' : ''}">${icon(ic)}<span>${label}</span></a>`).join('')}</nav>`);
+      `<a href="#/${id}" data-action="nav" class="${S.route === id ? 'active' : ''}">${icon(ic)}<span>${label}</span></a>`).join('')}
+      ${h ? `<button type="button" class="sheet-install" data-action="install-help"><img src="icons/icon-192.png" alt="" width="24" height="24"><span>Install SVLN app</span></button>` : ''}</nav>`);
+  },
+  // Always reachable (even after "Not now") from More.
+  'install-help'() {
+    const h = installHelp();
+    if (!h) return;
+    openModal(h.title, `<div class="install-help"><img src="icons/icon-192.png" alt="" width="72" height="72"><p>${h.text}</p></div>`, {
+      footer: h.oneTap ? '<button type="button" class="btn primary" data-action="install-app">Install</button>' : '',
+    });
   },
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },

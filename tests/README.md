@@ -20,7 +20,7 @@ npm test
 npm run test:rules
 ```
 
-`npm test` runs the unit, desktop and phone projects (138 tests, about 30 s). `npm run test:rules` starts the
+`npm test` runs the unit, desktop and phone projects (144 tests, about 30 s). `npm run test:rules` starts the
 Firestore emulator, so it needs Java. GitHub Actions runs both on every push and pull request, and
 **the site is only published when every test passes** (`.github/workflows/pages.yml`).
 
