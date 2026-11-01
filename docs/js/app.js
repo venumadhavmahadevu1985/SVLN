@@ -1,17 +1,23 @@
-import { CATEGORIES, PAYMENT_MODES, VENDOR_PERIODS, DEFAULT_SETTINGS, ENV } from './config.js';
+// Every value shown on screen (society name, flats, amounts, categories, expenses…) is read from
+// Firestore. The code only holds layout and wording, never society data.
+import { ENV } from './config.js';
 import { store } from './store.js';
-import { buildSeed } from './seed.js';
 import { barChart, donutChart } from './charts.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
-  fyStart, fyLabel, daysUntil, pad, lastDay, trunc,
+  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal,
 } from './util.js';
+
+// Technical fallbacks for settings fields that may be missing (not society data).
+const FALLBACK = { billing: 'fixed', fixedAmount: 0, ratePerSqft: 0, dueDay: 10, fyStartMonth: 4, openingBalance: 0, categories: [], paymentModes: [] };
 
 // ---------- state & small helpers ----------
 const S = {
   user: null,
+  info: null,          // public/info: society name + address (readable before sign-in)
+  hasSettings: false,
   db: { flats: [], flatProfiles: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...FALLBACK },
   collections: {},
   route: 'dashboard',
   ui: {
@@ -24,13 +30,21 @@ const $ = sel => document.querySelector(sel);
 const $view = $('#view'), $modal = $('#modal');
 const isAdmin = () => S.user?.role === 'admin';
 const sum = (arr, f = x => x) => arr.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+const uniq = arr => [...new Set(arr.filter(Boolean))];
+const lines = v => String(v || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean);
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
-const opts = (list, sel) => list.map(v => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v)}</option>`).join('');
 const byExpenseOrder = (a, b) => a.date.localeCompare(b.date) || (a.createdAt || '').localeCompare(b.createdAt || '') || (a.seq ?? 0) - (b.seq ?? 0);
 const flatById = id => S.db.flats.find(f => f.id === id);
 const flatName = f => `Flat ${f.id}${f.owner ? ' · ' + f.owner : ''}`;
 const empty = msg => `<p class="empty">${esc(msg)}</p>`;
+const societyName = () => S.settings.name || S.info?.name || '';
+const datalist = (id, items) => `<datalist id="${id}">${items.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+
+// Pick-lists are built from Settings plus whatever has already been used, so nothing is fixed in code.
+const categoryList = () => uniq([...(S.settings.categories || []), ...S.db.expenses.map(e => e.category)]);
+const modeList = () => uniq([...(S.settings.paymentModes || []), ...S.db.expenses.map(e => e.mode), ...S.db.payments.map(p => p.mode)]);
+const periodList = () => uniq(S.db.vendors.map(v => v.period));
 
 const ICONS = {
   home: 'M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10',
@@ -43,6 +57,7 @@ const ICONS = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   plus: 'M12 5v14M5 12h14',
   download: 'M12 3v12m-5-5 5 5 5-5M4 21h16',
+  upload: 'M12 21V9m-5 5 5-5 5 5M4 3h16',
   print: 'M6 9V3h12v6M6 18H4v-7h16v7h-2M6 14h12v7H6z',
   clip: 'M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 8',
   copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
@@ -79,6 +94,8 @@ function download(name, content, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const fileSlug = () => (societyName() || 'society').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 // ---------- money maths ----------
 function spentByMonth() {
   const m = {};
@@ -109,7 +126,7 @@ function topCategories(exps) {
 const billingMonths = () => monthsBetween(S.settings.startMonth, curMonth());
 function dueAmount(f) {
   if (Number(f.override) > 0) return Number(f.override);
-  return S.settings.billing === 'sqft' ? Math.round((Number(f.sqft) || 0) * Number(S.settings.ratePerSqft)) : Number(S.settings.fixedAmount);
+  return S.settings.billing === 'sqft' ? Math.round((Number(f.sqft) || 0) * Number(S.settings.ratePerSqft)) : Number(S.settings.fixedAmount) || 0;
 }
 const paymentsFor = (flatId, mk) => S.db.payments.filter(p => p.flatId === flatId && p.month === mk);
 function status(f, mk) {
@@ -125,7 +142,7 @@ function outstanding(f) {
 function reminderText(f, o) {
   const months = o.months.map(x => monthLabel(x.mk, true)).join(', ');
   const who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
-  return `Namaste ${who}, a gentle reminder from ${S.settings.name}: maintenance of ${money(o.total)} is pending for ${months}. ${S.settings.payNote} Thank you! — ${S.settings.treasurer}`;
+  return `Namaste ${who}, a gentle reminder from ${societyName()}: maintenance of ${money(o.total)} is pending for ${months}. ${S.settings.payNote || ''} Thank you! — ${S.settings.treasurer || ''}`.replace(/\s+/g, ' ').trim();
 }
 
 // ---------- data loading & writes ----------
@@ -142,13 +159,14 @@ async function loadData() {
     flatProfiles: Object.fromEntries(profiles.map(p => [p.id, p])),
     expenses, vendors, notices, payments, users: [], auditLog: [],
   };
-  const settings = meta.find(m => m.id === 'settings') || {};
-  S.settings = { ...DEFAULT_SETTINGS, ...settings };
+  const settings = meta.find(m => m.id === 'settings');
+  S.hasSettings = !!settings;
+  S.settings = { ...FALLBACK, ...(settings || {}) };
   if (!S.settings.startMonth) S.settings.startMonth = curMonth();
   S.collections = meta.find(m => m.id === 'collections')?.byMonth || {};
   if (isAdmin()) {
     S.db.auditLog = (await store.list('auditLog')).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 200);
-    if (store.mode === 'live') S.db.users = await store.list('users');
+    S.db.users = await store.list('users');
   }
 }
 
@@ -188,11 +206,16 @@ async function refresh(msg) {
   if (msg) toast(msg);
 }
 
-const saveSettings = (patch, summary) => save('meta', { ...S.settings, ...patch, id: 'settings' }, summary);
+// Settings are private to members; name + address are also copied to public/info for the sign-in page.
+async function saveSettings(patch, summary) {
+  const { id, createdAt, createdBy, updatedAt, updatedBy, ...clean } = { ...S.settings, ...patch };
+  await save('meta', { ...clean, id: 'settings' }, summary);
+  await store.put('public', { id: 'info', name: clean.name || '', address: clean.address || '', updatedAt: new Date().toISOString() });
+  S.info = { name: clean.name || '', address: clean.address || '' };
+}
 
 // ---------- modal ----------
-function openModal(title, body, { onSubmit, submitLabel = 'Save', footer = '', wide = false } = {}) {
-  $modal.className = wide ? 'wide' : '';
+function openModal(title, body, { onSubmit, submitLabel = 'Save', footer = '' } = {}) {
   $modal.innerHTML = `
     <form class="modal-card">
       <header><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-action="close-modal" aria-label="Close">✕</button></header>
@@ -227,30 +250,21 @@ const NAV = [
 ];
 const navItems = () => NAV.filter(n => !n[3] || isAdmin());
 
-function demoUsers() {
-  return [
-    { uid: 'demo-admin', name: 'Treasurer', role: 'admin' },
-    ...S.db.flats.map(f => ({ uid: 'demo-' + f.id, name: f.owner || `Flat ${f.id}`, role: 'resident', flatId: f.id })),
-  ];
+const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label="Switch light or dark theme" title="Light / dark">${icon('moon')}</button>`;
+const stagePill = () => ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — uses the stage database, not the live one">Stage</span>' : '';
+
+function renderBrand() {
+  const name = societyName();
+  $('#brandName').textContent = name || 'Maintenance';
+  $('#brandSub').textContent = name ? 'Maintenance & expenses' : '';
+  document.title = `${ENV === 'stage' ? '[Stage] ' : ''}${name ? name + ' · ' : ''}Maintenance`;
 }
 
-const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label="Switch light or dark theme" title="Light / dark">${icon('moon')}</button>`;
-
 function renderChrome() {
-  $('#brandName').textContent = S.settings.name;
-  document.title = `${ENV === 'stage' ? '[Stage] ' : ''}${S.settings.name} · Maintenance`;
-  let who = ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — changes here do not affect the live site">Stage</span>' : '';
-  if (store.mode === 'demo') {
-    who += `<span class="pill">Demo</span>
-      <label class="sr-only" for="demoUser">View as</label>
-      <select id="demoUser" class="select-sm" title="See the site as the treasurer or as a resident">
-        ${demoUsers().map(u => `<option value="${esc(u.uid)}"${u.uid === S.user.uid ? ' selected' : ''}>${u.role === 'admin' ? 'Treasurer (admin)' : `Resident · Flat ${esc(u.flatId)}`}</option>`).join('')}
-      </select>`;
-  } else if (S.user) {
-    who += `<span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
-      <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
-  }
-  $('#userBox').innerHTML = who + themeBtn();
+  renderBrand();
+  $('#userBox').innerHTML = stagePill() + (S.user ? `
+    <span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
+    <button class="btn sm ghost" data-action="sign-out">Sign out</button>` : '') + themeBtn();
   renderNav();
 }
 
@@ -263,6 +277,14 @@ function renderNav() {
     `<button type="button" data-action="more" class="${moreActive ? 'active' : ''}">${icon('more')}<span>More</span></button>`;
 }
 
+// Full-screen messages (sign-in, setup, waiting) hide the navigation.
+function renderBare(html) {
+  document.body.classList.add('bare');
+  renderBrand();
+  $('#userBox').innerHTML = stagePill() + (S.user ? '<button class="btn sm ghost" data-action="sign-out">Sign out</button>' : '') + themeBtn();
+  $view.innerHTML = html;
+}
+
 // ---------- routing ----------
 const VIEWS = {
   dashboard: viewDashboard, expenses: viewExpenses, dues: viewDues, reports: viewReports,
@@ -270,7 +292,7 @@ const VIEWS = {
 };
 
 function route() {
-  if (!S.user || !['admin', 'resident'].includes(S.user.role)) return;
+  if (!S.user || !['admin', 'resident'].includes(S.user.role) || !S.hasSettings) return;
   let r = location.hash.replace(/^#\/?/, '') || 'dashboard';
   if (!VIEWS[r] || (r === 'settings' && !isAdmin())) r = 'dashboard';
   const changed = r !== S.route;
@@ -319,10 +341,11 @@ function viewDashboard() {
   const recent = [...S.db.expenses].sort((a, b) => byExpenseOrder(b, a)).slice(0, 5);
   const pinned = S.db.notices.filter(n => n.pinned).sort((a, b) => b.date.localeCompare(a.date))[0];
   const prev = addMonths(cm, -1);
+  const needsData = isAdmin() && !S.db.flats.length && !S.db.expenses.length;
 
   return `
     <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div></div>
-    ${store.mode === 'demo' && isAdmin() ? `<div class="banner info">${icon('gear')}<div><strong>Demo mode</strong><span>Entries are saved only in this browser. Connect Firebase (see README) so residents see the same accounts.</span></div></div>` : ''}
+    ${needsData ? `<a class="banner info" href="#/settings">${icon('upload')}<div><strong>No accounts yet</strong><span>Add flats under Dues → Flats & amount, or import a data file in Settings.</span></div></a>` : ''}
     ${pinned ? `<a class="banner notice" href="#/notices">${icon('megaphone')}<div><strong>${esc(pinned.title)}</strong><span>${esc(trunc(pinned.body, 140))}</span></div></a>` : ''}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
@@ -355,7 +378,7 @@ function viewDashboard() {
 
 // ---------- expenses ----------
 function expenseRow(e) {
-  const [, m, d] = e.date.split('-');
+  const d = e.date.split('-')[2];
   return `<button type="button" class="row" data-action="view-expense" data-id="${esc(e.id)}">
     <span class="row-date"><b>${+d}</b><small>${monthShort(e.date.slice(0, 7))}</small></span>
     <span class="row-main"><strong>${esc(e.description)}</strong><small>${esc(e.category)}${e.vendor ? ' · ' + esc(e.vendor) : ''}</small></span>
@@ -376,7 +399,7 @@ function filteredExpenses() {
 
 function expList() {
   const list = filteredExpenses();
-  if (!list.length) return empty('No expenses match these filters.');
+  if (!list.length) return empty(S.db.expenses.length ? 'No expenses match these filters.' : 'No expenses recorded yet.');
   const head = `<p class="list-summary"><span>${list.length} expense${list.length === 1 ? '' : 's'}</span><strong>${money(sum(list, e => e.amount))}</strong></p>`;
   if (!S.ui.exp.sort.startsWith('date')) return head + `<div class="card list">${list.map(expenseRow).join('')}</div>`;
   const groups = [];
@@ -395,7 +418,7 @@ function expList() {
 function viewExpenses() {
   const f = S.ui.exp;
   const months = [...new Set(S.db.expenses.map(e => e.date.slice(0, 7)))].sort().reverse();
-  const vendors = [...new Set(S.db.expenses.map(e => e.vendor).filter(Boolean))].sort();
+  const vendors = uniq(S.db.expenses.map(e => e.vendor)).sort();
   const sel = (key, all, items, label = x => x) => `<select data-filter="${key}" aria-label="${key}">
     <option value="all">${all}</option>${items.map(v => `<option value="${esc(v)}"${f[key] === v ? ' selected' : ''}>${esc(label(v))}</option>`).join('')}</select>`;
   return `
@@ -410,7 +433,7 @@ function viewExpenses() {
       <input type="search" data-filter="q" placeholder="Search description, vendor…" value="${esc(f.q)}" aria-label="Search expenses">
       <div class="filters">
         ${sel('month', 'All months', months, m => monthLabel(m, true))}
-        ${sel('category', 'All categories', CATEGORIES.filter(c => S.db.expenses.some(e => e.category === c)))}
+        ${sel('category', 'All categories', uniq(S.db.expenses.map(e => e.category)).sort())}
         ${sel('vendor', 'All vendors', vendors)}
         <select data-filter="sort" aria-label="Sort">
           ${[['date-desc', 'Newest first'], ['date-asc', 'Oldest first'], ['amount-desc', 'Highest amount'], ['amount-asc', 'Lowest amount']]
@@ -422,16 +445,18 @@ function viewExpenses() {
 }
 
 function expenseForm(e = {}) {
-  const vendors = [...new Set([...S.db.vendors.map(v => v.name), ...S.db.expenses.map(x => x.vendor).filter(Boolean)])].sort();
+  const vendors = uniq([...S.db.vendors.map(v => v.name), ...S.db.expenses.map(x => x.vendor)]).sort();
   return `<div class="form-grid">
     <label class="field"><span>Date</span><input type="date" name="date" required value="${esc(e.date || todayISO())}"></label>
     <label class="field"><span>Amount (₹)</span><input type="number" name="amount" required min="1" step="1" inputmode="numeric" value="${esc(e.amount ?? '')}"></label>
-    <label class="field span2"><span>Category</span><select name="category" required>${opts(CATEGORIES, e.category)}</select></label>
-    <label class="field span2"><span>Description</span><input name="description" required maxlength="140" value="${esc(e.description || '')}" placeholder="e.g. Watchman salary – November"></label>
-    <label class="field"><span>Vendor / paid to</span><input name="vendor" list="vendorList" value="${esc(e.vendor || '')}"></label>
-    <datalist id="vendorList">${vendors.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-    <label class="field"><span>Payment mode</span><select name="mode">${opts(PAYMENT_MODES, e.mode || 'Cash')}</select></label>
-    <label class="field span2"><span>Paid by</span><input name="paidBy" value="${esc(e.paidBy || S.settings.treasurer)}"></label>
+    <label class="field span2"><span>Category</span><input name="category" required maxlength="60" list="catList" value="${esc(e.category || '')}" placeholder="Pick from the list or type a new one"></label>
+    ${datalist('catList', categoryList())}
+    <label class="field span2"><span>Description</span><input name="description" required maxlength="140" value="${esc(e.description || '')}"></label>
+    <label class="field"><span>Vendor / paid to</span><input name="vendor" list="vendorList" maxlength="80" value="${esc(e.vendor || '')}"></label>
+    ${datalist('vendorList', vendors)}
+    <label class="field"><span>Payment mode</span><input name="mode" list="modeList" maxlength="30" value="${esc(e.mode || modeList()[0] || '')}"></label>
+    ${datalist('modeList', modeList())}
+    <label class="field span2"><span>Paid by</span><input name="paidBy" maxlength="60" value="${esc(e.paidBy || S.settings.treasurer || '')}"></label>
     <div class="field span2"><label for="receiptIn"><span>Receipt or bill (photo or PDF)</span></label>
       <input id="receiptIn" type="file" name="receipt" accept="image/*,application/pdf">
       ${e.receipt ? `<small class="muted">Current: ${esc(e.receipt.name)} · <label class="inline"><input type="checkbox" name="removeReceipt"> remove</label></small>` : ''}
@@ -444,10 +469,10 @@ async function submitExpense(fd, existing) {
     ...(existing || {}),
     date: fd.get('date'),
     amount: Math.round(Number(fd.get('amount'))),
-    category: fd.get('category'),
+    category: fd.get('category').trim(),
     description: fd.get('description').trim(),
     vendor: fd.get('vendor').trim(),
-    mode: fd.get('mode'),
+    mode: fd.get('mode').trim(),
     paidBy: fd.get('paidBy').trim(),
   };
   if (!(doc.amount > 0)) throw new Error('Enter an amount greater than zero.');
@@ -462,7 +487,7 @@ function showExpense(id) {
   const e = S.db.expenses.find(x => x.id === id);
   if (!e) return;
   const r = e.receipt;
-  const isImg = r && (r.url.startsWith('data:image') || /\.(png|jpe?g|webp|gif|heic)$/i.test(r.name));
+  const isImg = r && /\.(png|jpe?g|webp|gif|heic)$/i.test(r.name);
   const item = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
   openModal(e.description, `
     <p class="big-amount">${money(e.amount)}</p>
@@ -472,7 +497,7 @@ function showExpense(id) {
       ${item('Recorded', esc([e.createdBy, e.createdAt && dateTimeLabel(e.createdAt)].filter(Boolean).join(' · ')))}
     </dl>
     ${r ? `<div class="receipt">${isImg ? `<img src="${esc(r.url)}" alt="Receipt for ${esc(e.description)}">` : ''}
-      <a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.name)}">${icon('clip')}<span>Open ${esc(r.name)}</span></a></div>`
+      <a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener">${icon('clip')}<span>Open ${esc(r.name)}</span></a></div>`
       : '<p class="muted">No receipt attached.</p>'}`,
     {
       footer: isAdmin() ? `<button type="button" class="btn danger-ghost" data-action="delete-expense" data-id="${esc(e.id)}">Delete</button>
@@ -484,9 +509,8 @@ function exportCsv() {
   const list = filteredExpenses();
   const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = [['Date', 'Category', 'Description', 'Vendor', 'Amount (INR)', 'Payment mode', 'Paid by', 'Receipt'],
-    ...list.map(e => [e.date, e.category, e.description, e.vendor, e.amount, e.mode, e.paidBy,
-      e.receipt ? (e.receipt.url.startsWith('http') ? e.receipt.url : e.receipt.name) : ''])];
-  download(`svln-paradise-expenses-${todayISO()}.csv`, '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
+    ...list.map(e => [e.date, e.category, e.description, e.vendor, e.amount, e.mode, e.paidBy, e.receipt?.url || ''])];
+  download(`${fileSlug()}-expenses-${todayISO()}.csv`, '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
 }
 
 // ---------- dues ----------
@@ -500,12 +524,13 @@ function fyNav(fy, prevAction, nextAction) {
     <button class="icon-btn" data-action="${nextAction}" ${fy >= maxFy ? 'disabled' : ''} aria-label="Next year">${icon('right')}</button></div>`;
 }
 
+const billingSummary = () => `${S.settings.billing === 'sqft' ? `₹${S.settings.ratePerSqft}/sq. ft.` : money(S.settings.fixedAmount) + ' per flat'} each month · due by the ${ordinal(S.settings.dueDay)}`;
+
 function duesAdmin() {
   const tab = S.ui.duesTab;
   const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount']];
   return `
-    <div class="page-head"><div><h1>Maintenance dues</h1>
-      <p class="muted">${S.settings.billing === 'sqft' ? `₹${S.settings.ratePerSqft}/sq. ft.` : money(S.settings.fixedAmount) + ' per flat'} each month · due by the ${S.settings.dueDay}${['th', 'st', 'nd', 'rd'][S.settings.dueDay % 10 > 3 || [11, 12, 13].includes(S.settings.dueDay) ? 0 : S.settings.dueDay % 10]}</p></div></div>
+    <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
     ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : duesFlats()}`;
 }
@@ -528,8 +553,8 @@ function duesGrid() {
         <div class="legend"><span><i class="swatch st-paid"></i>Paid</span><span><i class="swatch st-pending"></i>Due</span><span><i class="swatch st-overdue"></i>Overdue</span></div></div>
       ${months.length ? `<div class="table-scroll"><table class="dues-grid">
         <thead><tr><th scope="col">Flat</th>${months.map(m => `<th scope="col">${monthLabel(m)}</th>`).join('')}<th scope="col" class="num">Pending</th></tr></thead>
-        <tbody>${flats.map(f => `<tr><th scope="row"><strong>${esc(f.id)}</strong>${f.owner ? `<small>${esc(f.owner)}</small>` : ''}</th>
-          ${months.map(m => cell(f, m)).join('')}<td class="num">${outstanding(f).total ? money(outstanding(f).total) : '—'}</td></tr>`).join('')}</tbody>
+        <tbody>${flats.map(f => { const o = outstanding(f).total; return `<tr><th scope="row"><strong>${esc(f.id)}</strong>${f.owner ? `<small>${esc(f.owner)}</small>` : ''}</th>
+          ${months.map(m => cell(f, m)).join('')}<td class="num">${o ? money(o) : '—'}</td></tr>`; }).join('')}</tbody>
         <tfoot><tr><th scope="row">Paid</th>${months.map(m => `<td>${flats.filter(f => status(f, m).key === 'paid').length}/${flats.length}</td>`).join('')}<td></td></tr></tfoot>
       </table></div>` : empty('No months to show for this year.')}
       <p class="hint">Tap a box to record or view a payment.</p>
@@ -574,7 +599,7 @@ function duesFlats() {
     </form>
     <div class="card">
       <div class="card-head"><h2>Flats (${S.db.flats.length})</h2><button class="btn sm ghost" data-action="add-flat">${icon('plus')}<span>Add flat</span></button></div>
-      <div class="table-scroll"><table class="data">
+      ${S.db.flats.length ? `<div class="table-scroll"><table class="data">
         <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
         <tbody>${S.db.flats.map(f => { const p = S.db.flatProfiles[f.id]; return `<tr>
           <td><strong>${esc(f.id)}</strong></td>
@@ -583,7 +608,7 @@ function duesFlats() {
           <td class="num">${f.sqft || '—'}</td><td class="num">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
           <td class="num"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
             <button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Billing</button></div></td></tr>`; }).join('')}</tbody>
-      </table></div>
+      </table></div>` : empty('No flats yet. Add each flat number.')}
     </div>`;
 }
 
@@ -593,17 +618,17 @@ function duesResident() {
   const o = outstanding(f);
   const months = billingMonths().slice().reverse();
   return `
-    <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${S.settings.dueDay}th</p></div></div>
+    <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${ordinal(S.settings.dueDay)}</p></div></div>
     ${flatDetailsCard(f)}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
       : `<div class="banner ok">${icon('wallet')}<div><strong>All paid up</strong><span>Thank you!</span></div></div>`}
-    <div class="card"><h2>How to pay</h2><p>${esc(S.settings.payNote)}</p></div>
+    ${S.settings.payNote ? `<div class="card"><h2>How to pay</h2><p>${esc(S.settings.payNote)}</p></div>` : ''}
     <div class="card list">${months.map(mk => {
       const st = status(f, mk), pays = paymentsFor(f.id, mk);
       return `<div class="pending-row"><div class="row-main"><strong>${monthLabel(mk, true)}</strong>
-        <small>${pays.length ? pays.map(p => `${money(p.amount)} on ${dateLabel(p.paidOn)} (${esc(p.mode)})`).join(' · ') : 'No payment recorded'}</small></div>
+        <small>${pays.length ? pays.map(p => `${money(p.amount)} on ${dateLabel(p.paidOn)}${p.mode ? ` (${esc(p.mode)})` : ''}`).join(' · ') : 'No payment recorded'}</small></div>
         <span class="badge ${st.key === 'paid' ? 'ok' : st.key === 'overdue' ? 'bad' : 'warn'}">${st.label}</span></div>`;
     }).join('')}</div>`;
 }
@@ -614,20 +639,21 @@ function payModal(flatId, mk) {
   openModal(`Flat ${f.id} · ${monthLabel(mk, true)}`, `
     <p class="pay-status"><span class="badge ${st.key === 'paid' ? 'ok' : st.key === 'overdue' ? 'bad' : 'warn'}">${st.label}</span>
       Due ${money(st.due)} · Paid ${money(st.paid)}</p>
-    ${pays.length ? `<ul class="pay-list">${pays.map(p => `<li><span>${money(p.amount)} · ${dateLabel(p.paidOn)} · ${esc(p.mode)}${p.ref ? ' · ' + esc(p.ref) : ''}</span>
+    ${pays.length ? `<ul class="pay-list">${pays.map(p => `<li><span>${money(p.amount)} · ${dateLabel(p.paidOn)}${p.mode ? ' · ' + esc(p.mode) : ''}${p.ref ? ' · ' + esc(p.ref) : ''}</span>
       <button type="button" class="btn sm danger-ghost" data-action="delete-payment" data-id="${esc(p.id)}">Remove</button></li>`).join('')}</ul>` : ''}
     <h3>${pays.length ? 'Add another payment' : 'Record payment'}</h3>
     <div class="form-grid">
-      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="1" step="1" required value="${remaining || st.due}"></label>
+      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="1" step="1" required value="${remaining || st.due || ''}"></label>
       <label class="field"><span>Received on</span><input type="date" name="paidOn" required value="${todayISO()}"></label>
-      <label class="field"><span>Mode</span><select name="mode">${opts(PAYMENT_MODES, 'UPI')}</select></label>
+      <label class="field"><span>Mode</span><input name="mode" list="payModeList" maxlength="30" value="${esc(modeList()[0] || '')}"></label>
+      ${datalist('payModeList', modeList())}
       <label class="field"><span>UPI ref / note</span><input name="ref" maxlength="60"></label>
     </div>`, {
     submitLabel: 'Save payment',
     onSubmit: async fd => {
       const amount = Math.round(Number(fd.get('amount')));
       if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
-      await save('payments', { flatId, month: mk, amount, paidOn: fd.get('paidOn'), mode: fd.get('mode'), ref: fd.get('ref').trim() },
+      await save('payments', { flatId, month: mk, amount, paidOn: fd.get('paidOn'), mode: fd.get('mode').trim(), ref: fd.get('ref').trim() },
         `${money(amount)} from Flat ${flatId} for ${monthLabel(mk, true)}`);
       await refresh('Payment recorded');
     },
@@ -650,8 +676,9 @@ function flatModal(f) {
       if (isNew && !id) throw new Error('Enter a flat number.');
       if (isNew && flatById(id)) throw new Error(`Flat ${id} already exists.`);
       const doc = { ...f, id, owner: fd.get('owner').trim(), sqft: Number(fd.get('sqft')) || 0, override: Number(fd.get('override')) || 0 };
-      // store.put keeps the given id, so new flats go through store directly and are audited here.
-      await store.put('flats', { ...doc, updatedAt: new Date().toISOString() });
+      // Flat docs are keyed by flat number, so they're written directly and audited here.
+      const now = new Date().toISOString();
+      await store.put('flats', { ...doc, ...(isNew ? { createdAt: now, createdBy: S.user.name } : {}), updatedAt: now, updatedBy: S.user.name });
       await audit(isNew ? 'create' : 'update', 'flats', id, `Flat ${id}${doc.owner ? ' – ' + doc.owner : ''}`);
       await refresh(isNew ? 'Flat added' : 'Flat updated');
     },
@@ -687,17 +714,18 @@ function flatDetailsCard(f) {
 
 function profileModal(flatId) {
   const f = flatById(flatId), p = S.db.flatProfiles[flatId] || {};
+  const occ = ['Owner', 'Tenant', 'Vacant'];
   openModal(`Flat ${flatId} details`, `
     <p class="muted">Your name is shown to other residents. Phone numbers and other details are visible only to this flat and the treasurer.</p>
     <div class="form-grid">
       <label class="field span2"><span>Owner name</span><input name="owner" required maxlength="60" autocomplete="name" value="${esc(f.owner)}"></label>
-      <label class="field"><span>Living here</span><select name="occupancy">${opts(['Owner', 'Tenant', 'Vacant'], p.occupancy || 'Owner')}</select></label>
+      <label class="field"><span>Living here</span><select name="occupancy">${occ.map(o => `<option${o === (p.occupancy || 'Owner') ? ' selected' : ''}>${o}</option>`).join('')}</select></label>
       <label class="field"><span>Tenant name (if rented)</span><input name="residentName" maxlength="60" value="${esc(p.residentName || '')}"></label>
       <label class="field"><span>Mobile (WhatsApp)</span><input type="tel" name="phone" maxlength="20" inputmode="tel" autocomplete="tel" value="${esc(p.phone || '')}" placeholder="10-digit mobile number"></label>
       <label class="field"><span>Other phone</span><input type="tel" name="altPhone" maxlength="20" inputmode="tel" value="${esc(p.altPhone || '')}"></label>
       <label class="field"><span>Email</span><input type="email" name="email" maxlength="80" autocomplete="email" value="${esc(p.email || '')}"></label>
       <label class="field"><span>Family members</span><input type="number" name="members" min="0" max="20" value="${esc(p.members || '')}"></label>
-      <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(p.vehicles || '')}" placeholder="e.g. AP 31 AB 1234 (car), AP 31 CD 5678 (bike)"></label>
+      <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(p.vehicles || '')}" placeholder="Registration numbers, e.g. car and bike"></label>
       <label class="field"><span>Emergency contact name</span><input name="emergencyName" maxlength="60" value="${esc(p.emergencyName || '')}"></label>
       <label class="field"><span>Emergency contact phone</span><input type="tel" name="emergencyPhone" maxlength="20" inputmode="tel" value="${esc(p.emergencyPhone || '')}"></label>
     </div>`, {
@@ -717,7 +745,7 @@ function profileModal(flatId) {
 function viewReports() {
   const tab = S.ui.reportTab;
   return `
-    <div class="page-head no-print"><div><h1>Reports</h1><p class="muted">Monthly statement in the same format as the notebook. Print or save as PDF to share.</p></div>
+    <div class="page-head no-print"><div><h1>Reports</h1><p class="muted">Monthly statement in the notebook format. Print or save as PDF to share.</p></div>
       <div class="actions"><button class="btn primary" data-action="print">${icon('print')}<span>Print / PDF</span></button></div></div>
     <div class="seg no-print" role="tablist">
       <button role="tab" aria-selected="${tab === 'monthly'}" class="${tab === 'monthly' ? 'active' : ''}" data-action="report-tab" data-tab="monthly">Monthly statement</button>
@@ -728,7 +756,7 @@ function viewReports() {
 
 function statementHeader(title, sub) {
   return `<header class="st-head">
-    <div><img src="icon.svg" alt="" width="40" height="40"><div><h2>${esc(S.settings.name)}</h2><p>${esc(S.settings.address)}</p></div></div>
+    <div><img src="icon.svg" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
     <div class="st-title"><strong>${esc(title)}</strong><span>${esc(sub)}</span></div></header>`;
 }
 
@@ -783,7 +811,7 @@ function monthlyReport() {
         ${categoryTotals(exps).map(c => `<tr><td>${esc(c.label)}</td><td class="num">${money(c.value)}</td></tr>`).join('')}</tbody></table>` : ''}
       <footer class="st-foot">
         ${isAdmin() ? `<span>${paidCount} of ${S.db.flats.length} flats paid ${monthLabel(mk, true)} maintenance</span>` : ''}
-        <span>Prepared by ${esc(s.treasurer)} · ${dateLabel(todayISO())}</span>
+        <span>${s.treasurer ? 'Prepared by ' + esc(s.treasurer) + ' · ' : ''}${dateLabel(todayISO())}</span>
       </footer>
     </article>`;
 }
@@ -853,10 +881,11 @@ function vendorModal(v) {
   openModal(isNew ? 'Add vendor' : 'Edit vendor', `
     <div class="form-grid">
       <label class="field span2"><span>Name</span><input name="name" required maxlength="80" value="${esc(v.name || '')}"></label>
-      <label class="field span2"><span>Service</span><input name="service" maxlength="80" value="${esc(v.service || '')}" placeholder="e.g. Lift AMC"></label>
+      <label class="field span2"><span>Service</span><input name="service" maxlength="80" value="${esc(v.service || '')}"></label>
       <label class="field"><span>Phone</span><input type="tel" name="phone" maxlength="20" value="${esc(v.phone || '')}"></label>
       <label class="field"><span>Contract amount (₹)</span><input type="number" name="contractAmount" min="0" value="${esc(v.contractAmount || '')}"></label>
-      <label class="field"><span>Billing period</span><select name="period"><option value="">—</option>${opts(VENDOR_PERIODS, v.period)}</select></label>
+      <label class="field"><span>Billing period</span><input name="period" list="periodList" maxlength="30" value="${esc(v.period || '')}" placeholder="e.g. Monthly"></label>
+      ${datalist('periodList', periodList())}
       <label class="field"><span>AMC / contract renewal</span><input type="date" name="amcRenewal" value="${esc(v.amcRenewal || '')}"></label>
       <label class="field span2"><span>Notes</span><textarea name="notes" rows="2" maxlength="300">${esc(v.notes || '')}</textarea></label>
     </div>`, {
@@ -906,40 +935,52 @@ function noticeModal(n) {
 }
 
 // ---------- settings ----------
+const monthOptions = sel => Array.from({ length: 12 }, (_, i) =>
+  `<option value="${i + 1}"${+sel === i + 1 ? ' selected' : ''}>${new Date(2000, i, 1).toLocaleDateString('en-IN', { month: 'long' })}</option>`).join('');
+
+// Fields shared by the first-run setup screen and the Settings page.
+function societyFields(s) {
+  return `
+    <label class="field span2"><span>Society / apartment name</span><input name="name" required maxlength="80" value="${esc(s.name || '')}"></label>
+    <label class="field span2"><span>Address</span><input name="address" maxlength="200" value="${esc(s.address || '')}"></label>
+    <label class="field span2"><span>Treasurer (shown on statements)</span><input name="treasurer" maxlength="60" value="${esc(s.treasurer || '')}"></label>
+    <label class="field"><span>Tracking starts (month)</span><input type="month" name="startMonth" required value="${esc(s.startMonth || curMonth())}"></label>
+    <label class="field"><span>Balance brought forward into that month (₹)</span><input type="number" name="openingBalance" step="1" value="${esc(s.openingBalance ?? '')}"></label>
+    <label class="field"><span>Financial year starts in</span><select name="fyStartMonth">${monthOptions(s.fyStartMonth)}</select></label>
+    <label class="field span2"><span>How residents should pay</span><textarea name="payNote" rows="2" maxlength="300">${esc(s.payNote || '')}</textarea></label>
+    <label class="field"><span>Expense categories (one per line)</span><textarea name="categories" rows="6">${esc((s.categories || []).join('\n'))}</textarea></label>
+    <label class="field"><span>Payment modes (one per line)</span><textarea name="paymentModes" rows="6">${esc((s.paymentModes || []).join('\n'))}</textarea></label>`;
+}
+
+function societyPatch(fd) {
+  const patch = {};
+  for (const k of ['name', 'address', 'treasurer', 'startMonth', 'payNote']) patch[k] = String(fd.get(k) || '').trim();
+  patch.openingBalance = Number(fd.get('openingBalance')) || 0;
+  patch.fyStartMonth = Number(fd.get('fyStartMonth')) || FALLBACK.fyStartMonth;
+  patch.categories = uniq(lines(fd.get('categories')));
+  patch.paymentModes = uniq(lines(fd.get('paymentModes')));
+  return patch;
+}
+
 function viewSettings() {
-  const s = S.settings;
-  const monthsOpts = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${+s.fyStartMonth === i + 1 ? ' selected' : ''}>${new Date(2000, i, 1).toLocaleDateString('en-IN', { month: 'long' })}</option>`).join('');
   return `
     <div class="page-head"><div><h1>Settings</h1><p class="muted">Society details, members and data.</p></div></div>
     <form class="card stack" data-form="settings">
       <h2>Society</h2>
-      <div class="form-grid">
-        <label class="field span2"><span>Name</span><input name="name" required value="${esc(s.name)}"></label>
-        <label class="field span2"><span>Address</span><input name="address" value="${esc(s.address)}"></label>
-        <label class="field span2"><span>Treasurer (shown on statements)</span><input name="treasurer" value="${esc(s.treasurer)}"></label>
-        <label class="field"><span>Tracking starts (month)</span><input type="month" name="startMonth" required value="${esc(s.startMonth)}"></label>
-        <label class="field"><span>Balance brought forward into that month (₹)</span><input type="number" name="openingBalance" step="1" value="${esc(s.openingBalance)}"></label>
-        <label class="field"><span>Financial year starts in</span><select name="fyStartMonth">${monthsOpts}</select></label>
-        <label class="field span2"><span>How residents should pay</span><textarea name="payNote" rows="2">${esc(s.payNote)}</textarea></label>
-      </div>
+      <div class="form-grid">${societyFields(S.settings)}</div>
       <div><button class="btn primary">Save</button></div>
     </form>
-    ${store.mode === 'live' ? membersCard() : ''}
+    ${membersCard()}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
       <ul class="audit">${S.db.auditLog.map(a => `<li><time>${dateTimeLabel(a.at)}</time><span><strong>${esc(a.byName)}</strong> ${a.action}d ${esc(ENTITY_LABELS[a.entity] || a.entity)}: ${esc(a.summary)}</span></li>`).join('') || '<li class="muted">No activity yet.</li>'}</ul>
     </div>
-    ${store.mode === 'live' && !S.db.flats.length && !S.db.expenses.length ? `
-    <div class="banner info"><div><strong>New Firebase database</strong><span>Load the 8 flats and the October 2026 notebook page (receipts ₹8,000, expenditure ₹8,010, balance ₹3,959) to start from.</span>
-      <div class="row-btns" style="margin-top:8px"><button class="btn primary sm" data-action="seed-live">Load October 2026 data</button></div></div></div>` : ''}
     <div class="card stack">
       <h2>Data</h2>
-      <p class="muted">${store.mode === 'demo' ? 'Demo mode keeps data in this browser only. Download a backup regularly.' : 'Download a full backup of the society accounts.'}</p>
+      <p class="muted">Download a full backup, or import a data file (for example an earlier month from the notebook). Imported records with the same ID replace existing ones.</p>
       <div class="row-btns">
         <button class="btn ghost" data-action="backup">${icon('download')}<span>Download backup (JSON)</span></button>
-        ${store.mode === 'demo' ? `
-          <label class="btn ghost">Restore backup<input type="file" accept="application/json" data-change="restore" hidden></label>
-          <button class="btn danger-ghost" data-action="reset-demo">Reset to October 2026 data</button>` : ''}
+        <label class="btn ghost">${icon('upload')}<span>Import data file</span><input type="file" accept="application/json,.json" data-change="import" hidden></label>
       </div>
     </div>`;
 }
@@ -951,46 +992,63 @@ const ENTITY_LABELS = {
 
 function membersCard() {
   const users = [...S.db.users].sort((a, b) => (a.role === 'pending' ? -1 : 0) - (b.role === 'pending' ? -1 : 0) || (a.name || '').localeCompare(b.name || ''));
+  const flatOpts = sel => `<option value="">—</option>` + S.db.flats.map(f => `<option value="${esc(f.id)}"${f.id === sel ? ' selected' : ''}>${esc(f.id)}</option>`).join('');
+  const roleOpts = sel => ['pending', 'resident', 'admin'].map(r => `<option${r === sel ? ' selected' : ''}>${r}</option>`).join('');
   return `<div class="card">
     <div class="card-head"><h2>Members</h2><span class="muted">Approve residents and link them to their flat</span></div>
-    <div class="table-scroll"><table class="data">
+    ${users.length ? `<div class="table-scroll"><table class="data">
       <thead><tr><th>Name</th><th>Role</th><th>Flat</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr data-uid="${esc(u.id)}">
         <td><strong>${esc(u.name || '')}</strong><br><small class="muted">${esc(u.email || '')}${u.phone ? ' · ' + esc(u.phone) : ''}</small>
           ${u.role === 'pending' && u.requestedFlat ? `<br><span class="badge warn">Asks for Flat ${esc(u.requestedFlat)}</span>` : ''}</td>
-        <td><select class="select-sm" name="role">${opts(['pending', 'resident', 'admin'], u.role === 'pending' && u.requestedFlat ? 'resident' : u.role)}</select></td>
-        <td><select class="select-sm" name="flatId"><option value="">—</option>${opts(S.db.flats.map(f => f.id), u.flatId || u.requestedFlat)}</select></td>
+        <td><select class="select-sm" name="role">${roleOpts(u.role === 'pending' && u.requestedFlat ? 'resident' : u.role)}</select></td>
+        <td><select class="select-sm" name="flatId">${flatOpts(u.flatId || u.requestedFlat)}</select></td>
         <td class="num"><button class="btn sm ${u.role === 'pending' ? 'primary' : 'ghost'}" data-action="save-member" data-id="${esc(u.id)}">${u.role === 'pending' ? 'Approve' : 'Save'}</button></td></tr>`).join('')}</tbody>
-    </table></div></div>`;
+    </table></div>` : empty('Nobody has signed in yet. Share the site link with residents.')}</div>`;
 }
 
+const IMPORT_COLLECTIONS = ['flats', 'flatProfiles', 'expenses', 'payments', 'vendors', 'notices'];
+
 function backupJson() {
+  const { id, ...settings } = S.settings;
   return JSON.stringify({
-    app: 'svln-paradise', version: 1, exportedAt: new Date().toISOString(),
-    settings: S.settings, collections: S.collections,
-    flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses, payments: S.db.payments, vendors: S.db.vendors, notices: S.db.notices,
+    app: 'svln-paradise', version: 1, exportedAt: new Date().toISOString(), settings,
+    flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses,
+    payments: S.db.payments, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
 }
 
-function backupToStore(b) {
-  if (b.app !== 'svln-paradise' || !Array.isArray(b.flats) || !Array.isArray(b.expenses)) throw new Error('This is not an SVLN Paradise backup file.');
-  const map = arr => Object.fromEntries((arr || []).map(d => [d.id, d]));
-  return {
-    flats: map(b.flats), flatProfiles: map(b.flatProfiles), expenses: map(b.expenses), payments: map(b.payments), vendors: map(b.vendors), notices: map(b.notices),
-    meta: { settings: { ...b.settings, id: 'settings' }, collections: { id: 'collections', byMonth: b.collections || {} } },
-    auditLog: { restored: { id: 'restored', at: new Date().toISOString(), by: S.user.uid, byName: S.user.name, action: 'create', entity: 'all', entityId: '', summary: 'Backup restored' } },
-  };
+async function importData(file) {
+  const b = JSON.parse(await file.text());
+  if (b.app !== 'svln-paradise') throw new Error('This file is not a data file for this site.');
+  const counts = IMPORT_COLLECTIONS.map(c => [c, (b[c] || []).length]).filter(([, n]) => n);
+  const summary = counts.map(([c, n]) => `${n} ${ENTITY_LABELS[c] || c}${n === 1 ? '' : 's'}`).join(', ');
+  if (!confirm(`Import ${file.name}?\n\n${summary || 'No records'}${b.settings ? '\n+ society settings' : ''}`)) return;
+  if (b.settings) await saveSettings(b.settings, `Settings imported from ${file.name}`);
+  for (const [col] of counts) for (const d of b[col]) await store.put(col, d);
+  await refreshCollectionTotals();
+  await audit('create', 'all', '', `Imported ${file.name}: ${summary}`);
+  await refresh('Import finished');
 }
 
-// ---------- sign-in screens (live mode) ----------
-function renderLogin() {
-  document.body.classList.add('bare');
-  $('#userBox').innerHTML = themeBtn();
-  $view.innerHTML = `
+// ---------- sign-in, first-run setup and waiting screens ----------
+function renderNotConfigured() {
+  renderBare(`
     <section class="auth card">
       <img src="icon.svg" alt="" width="64" height="64">
-      <h1>${esc(S.settings.name)}</h1>
-      <p class="muted">Sign in to see the maintenance accounts.</p>
+      <h1>Not connected yet</h1>
+      <p>This ${ENV} copy of the site isn't connected to its Firebase database yet.</p>
+      <p class="muted">Add the Firebase web app config for <strong>${ENV}</strong> in <code>docs/js/config.js</code>. See the README.</p>
+    </section>`);
+}
+
+function renderLogin() {
+  renderBare(`
+    <section class="auth card">
+      <img src="icon.svg" alt="" width="64" height="64">
+      <h1>${esc(S.info?.name || 'Maintenance accounts')}</h1>
+      ${S.info?.address ? `<p class="muted">${esc(S.info.address)}</p>` : ''}
+      <p>${S.info ? 'Sign in to see the maintenance accounts.' : 'Sign in to set up your society\'s accounts.'}</p>
       <button class="btn primary block" data-action="login-google">Continue with Google</button>
       <div class="or"><span>or use email</span></div>
       <form data-form="login" class="stack">
@@ -999,13 +1057,29 @@ function renderLogin() {
         <label class="field"><span>Password</span><input type="password" name="password" required minlength="6" autocomplete="current-password"></label>
         <div class="row-btns"><button class="btn primary" name="mode" value="signin">Sign in</button><button class="btn ghost" name="mode" value="signup">Create account</button></div>
       </form>
-    </section>`;
+    </section>`);
+}
+
+function renderSetup() {
+  renderBare(`
+    <section class="card setup">
+      <h1>Set up your society</h1>
+      <p class="muted">You're the first person here, so you'll be the treasurer (admin). These details are saved in the database
+        and can be changed later in Settings. Flats and past months can be added afterwards, or imported from a data file.</p>
+      <form data-form="setup" class="stack">
+        <div class="form-grid">
+          ${societyFields({ treasurer: S.user.name, fyStartMonth: FALLBACK.fyStartMonth })}
+          <label class="field"><span>Maintenance per flat each month (₹)</span><input type="number" name="fixedAmount" min="0" step="1" required></label>
+          <label class="field"><span>Due by day of month</span><input type="number" name="dueDay" min="1" max="28" required value="${FALLBACK.dueDay}"></label>
+          <label class="field span2"><span>Flat numbers (one per line or comma separated)</span><textarea name="flats" rows="3"></textarea></label>
+        </div>
+        <div><button class="btn primary">Save and continue</button></div>
+      </form>
+    </section>`);
 }
 
 function renderPending() {
-  document.body.classList.add('bare');
-  $('#userBox').innerHTML = themeBtn();
-  $view.innerHTML = `
+  renderBare(`
     <section class="auth card">
       <img src="icon.svg" alt="" width="64" height="64">
       <h1>${S.user.requestedFlat ? 'Waiting for approval' : 'Which flat is yours?'}</h1>
@@ -1013,13 +1087,21 @@ function renderPending() {
         ${S.user.requestedFlat ? `You asked to join <strong>Flat ${esc(S.user.requestedFlat)}</strong>. The treasurer will approve it soon. You can change the details below if needed.`
           : 'Tell us your flat number. The treasurer will approve it once, and after that you can see the accounts and update your flat\'s details.'}</p>
       <form data-form="request-flat" class="stack">
-        <label class="field"><span>Flat number</span><input name="requestedFlat" required maxlength="12" inputmode="numeric" placeholder="e.g. 302" value="${esc(S.user.requestedFlat || '')}"></label>
+        <label class="field"><span>Flat number</span><input name="requestedFlat" required maxlength="12" inputmode="numeric" value="${esc(S.user.requestedFlat || '')}"></label>
         <label class="field"><span>Your name</span><input name="name" required maxlength="60" autocomplete="name" value="${esc(S.user.name || '')}"></label>
         <label class="field"><span>Mobile</span><input type="tel" name="phone" maxlength="20" inputmode="tel" autocomplete="tel" value="${esc(S.user.phone || '')}"></label>
         <button class="btn primary">${S.user.requestedFlat ? 'Update request' : 'Send request'}</button>
       </form>
-      <button class="btn ghost" data-action="sign-out">Sign out</button>
-    </section>`;
+    </section>`);
+}
+
+function renderNotReady() {
+  renderBare(`
+    <section class="auth card">
+      <img src="icon.svg" alt="" width="64" height="64">
+      <h1>Not set up yet</h1>
+      <p>The treasurer hasn't finished setting up the accounts. Please check back later.</p>
+    </section>`);
 }
 
 // ---------- event wiring ----------
@@ -1111,37 +1193,34 @@ const ACTIONS = {
     await save('users', doc, `${u.name || u.email}: ${doc.role}${doc.flatId ? ', flat ' + doc.flatId : ''}`);
     await refresh('Member updated');
   },
-  backup: () => download(`svln-paradise-backup-${todayISO()}.json`, backupJson(), 'application/json'),
-  async 'seed-live'() {
-    if (!confirm('Load the 8 flats and October 2026 entries into Firebase?')) return;
-    const seed = buildSeed();
-    for (const col of ['meta', 'flats', 'expenses', 'payments', 'vendors', 'notices']) {
-      for (const doc of Object.values(seed[col])) await store.put(col, doc);
-    }
-    await audit('create', 'all', '', 'October 2026 notebook entries loaded');
-    await refresh('October 2026 data loaded');
-  },
-  async 'reset-demo'() {
-    if (!confirm('Replace everything in this browser with the original October 2026 notebook data?')) return;
-    await store.reset(buildSeed);
-    await refresh('Data reset');
-  },
+  backup: () => download(`${fileSlug()}-backup-${todayISO()}.json`, backupJson(), 'application/json'),
 };
 
 const FORMS = {
   async billing(fd) {
-    const dueDay = Math.min(Math.max(parseInt(fd.get('dueDay'), 10) || 10, 1), 28);
+    const dueDay = Math.min(Math.max(parseInt(fd.get('dueDay'), 10) || FALLBACK.dueDay, 1), 28);
     await saveSettings({ billing: fd.get('billing'), fixedAmount: Number(fd.get('fixedAmount')) || 0, ratePerSqft: Number(fd.get('ratePerSqft')) || 0, dueDay },
       'Maintenance amount updated');
     await refresh('Maintenance amount saved');
   },
   async settings(fd) {
-    const patch = {};
-    for (const k of ['name', 'address', 'treasurer', 'startMonth', 'payNote']) patch[k] = String(fd.get(k) || '').trim();
-    patch.openingBalance = Number(fd.get('openingBalance')) || 0;
-    patch.fyStartMonth = Number(fd.get('fyStartMonth')) || 4;
-    await saveSettings(patch, 'Society settings updated');
+    await saveSettings(societyPatch(fd), 'Society settings updated');
     await refresh('Settings saved');
+  },
+  async setup(fd) {
+    const now = new Date().toISOString();
+    // The first sign-in on an empty database becomes admin (firestore.rules only allow this before public/info exists).
+    if (!isAdmin()) {
+      await store.put('users', { id: S.user.uid, email: S.user.email, name: S.user.name, role: 'admin', createdAt: now });
+      S.user.role = 'admin';
+    }
+    const dueDay = Math.min(Math.max(parseInt(fd.get('dueDay'), 10) || FALLBACK.dueDay, 1), 28);
+    await saveSettings({ ...societyPatch(fd), billing: 'fixed', fixedAmount: Number(fd.get('fixedAmount')) || 0, ratePerSqft: 0, dueDay }, 'Society set up');
+    for (const id of uniq(lines(fd.get('flats')))) {
+      await store.put('flats', { id, owner: '', sqft: 0, createdAt: now, createdBy: S.user.name });
+    }
+    await start();
+    toast('Society set up');
   },
   async 'request-flat'(fd) {
     const prof = await store.get('users', S.user.uid);
@@ -1160,12 +1239,10 @@ const FORMS = {
 
 const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
-  async restore(_, input) {
+  async import(_, input) {
     const file = input.files[0];
-    if (!file) return;
-    if (!confirm('Replace the data in this browser with this backup?')) return;
-    await store.importAll(backupToStore(JSON.parse(await file.text())));
-    await refresh('Backup restored');
+    input.value = '';
+    if (file) await importData(file);
   },
 };
 
@@ -1187,24 +1264,19 @@ function bindEvents() {
   });
   document.addEventListener('change', async e => {
     const t = e.target;
-    try {
-      if (t.id === 'demoUser') {
-        lsSet('svln-demo-user', t.value);
-        S.user = demoUsers().find(u => u.uid === t.value);
-        if (S.route === 'settings' && !isAdmin()) location.hash = '#/dashboard';
-        S.ui.reportMonth = null;
-        await refresh();
-      } else if (t.dataset.change) {
-        await CHANGES[t.dataset.change](t.value, t);
-      }
-    } catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    if (!t.dataset.change) return;
+    try { await CHANGES[t.dataset.change](t.value, t); }
+    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
   });
   document.addEventListener('submit', async e => {
     const form = e.target.closest('form[data-form]');
     if (!form) return;
     e.preventDefault();
+    const btn = e.submitter;
+    if (btn) btn.disabled = true;
     try { await FORMS[form.dataset.form](new FormData(form, e.submitter), form); }
     catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    finally { if (btn) btn.disabled = false; }
   });
   $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
   window.addEventListener('hashchange', route);
@@ -1212,10 +1284,26 @@ function bindEvents() {
 
 // ---------- boot ----------
 async function start() {
-  document.body.classList.remove('bare');
   await loadData();
+  if (!S.hasSettings) return isAdmin() ? renderSetup() : renderNotReady();
+  document.body.classList.remove('bare');
   renderChrome();
   route();
+}
+
+async function onAuthChange(fbUser) {
+  if (!fbUser) { S.user = null; return renderLogin(); }
+  let prof = await store.get('users', fbUser.uid);
+  S.user = { uid: fbUser.uid, email: fbUser.email, name: fbUser.displayName || fbUser.email };
+  if (!prof) {
+    // Empty database: the first person to sign in sets the society up and becomes admin.
+    if (!S.info) { S.user.role = 'pending'; return renderSetup(); }
+    prof = { id: fbUser.uid, email: fbUser.email, name: S.user.name, role: 'pending', createdAt: new Date().toISOString() };
+    await store.put('users', prof);
+  }
+  Object.assign(S.user, { email: prof.email, name: prof.name, role: prof.role, flatId: prof.flatId, requestedFlat: prof.requestedFlat, phone: prof.phone });
+  if (!['admin', 'resident'].includes(prof.role)) return renderPending();
+  await start();
 }
 
 async function boot() {
@@ -1223,32 +1311,18 @@ async function boot() {
   if (theme) document.documentElement.dataset.theme = theme;
   bindEvents();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
-  try { await store.init(buildSeed); }
-  catch (err) {
+  if (!store) return renderNotConfigured();
+  try {
+    await store.init();
+    S.info = await store.get('public', 'info');
+  } catch (err) {
     console.error(err);
-    $view.innerHTML = `<div class="card">${empty('Could not start: ' + (err.message || err))}</div>`;
-    return;
+    return renderBare(`<div class="card">${empty('Could not connect to the database: ' + (err.message || err))}</div>`);
   }
-
-  if (store.mode === 'demo') {
-    S.db.flats = await store.list('flats');
-    const users = demoUsers();
-    S.user = users.find(u => u.uid === lsGet('svln-demo-user')) || users[0];
-    return start();
-  }
-
+  renderBrand();
   store.onAuth(async fbUser => {
-    try {
-      if (!fbUser) { S.user = null; return renderLogin(); }
-      let prof = await store.get('users', fbUser.uid);
-      if (!prof) {
-        prof = { id: fbUser.uid, email: fbUser.email, name: fbUser.displayName || fbUser.email, role: 'pending', createdAt: new Date().toISOString() };
-        await store.put('users', prof);
-      }
-      S.user = { uid: fbUser.uid, email: prof.email, name: prof.name, role: prof.role, flatId: prof.flatId, requestedFlat: prof.requestedFlat, phone: prof.phone };
-      if (!['admin', 'resident'].includes(prof.role)) return renderPending();
-      await start();
-    } catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
+    try { await onAuthChange(fbUser); }
+    catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }
   });
 }
 

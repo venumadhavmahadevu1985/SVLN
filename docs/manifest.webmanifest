@@ -1,7 +1,7 @@
 {
-  "name": "SVLN Paradise Maintenance",
-  "short_name": "SVLN Paradise",
-  "description": "Maintenance collections, expenses and monthly statements for SVLN Paradise.",
+  "name": "Apartment Maintenance",
+  "short_name": "Maintenance",
+  "description": "Apartment maintenance collections, expenses and monthly statements.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

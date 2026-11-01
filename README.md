@@ -1,137 +1,102 @@
-# SVLN Paradise — Maintenance
+# Apartment Maintenance
 
-A simple, mobile-friendly website for **SVLN Paradise** (1-1, Sample Colony, Visakhapatnam)
-to share general maintenance collections and expenses with all 8 flats.
+A mobile-friendly website where an apartment association shares its general maintenance collections and expenses.
+Every flat signs in with its own account. The treasurer (admin) manages everything.
 
-It starts with the **October 2026** page from the society notebook:
+- **Prod (live):** https://venumadhavmahadevu1985.github.io/SVLN/
+- **Stage (test):** https://venumadhavmahadevu1985.github.io/SVLN/stage/
 
-| | |
-|---|---|
-| Receipts (@ ₹1,000 × 8) | ₹8,000 |
-| Balance from Sep '26 | ₹3,969 |
-| **Total** | **₹11,969** |
-| Expenditure (watchman, electricity, GVMC, brooms, municipal water, Dasara mamullu) | ₹8,010 |
-| **Balance carried to Nov '26** | **₹3,959** |
+**No society data is stored in the code.** The name, address, flats, amounts, categories, payment modes, expenses,
+payments, vendors and notices all live in **Firebase Firestore**. They're entered through the site or imported from a
+data file such as [`data/2026-10-notebook.json`](data/2026-10-notebook.json), which holds the October 2026 notebook page.
+
+## Who can do what
+
+| | Resident (each flat) | Admin (treasurer) |
+|---|---|---|
+| Sign in with own Google or email account | ✓ | ✓ |
+| Dashboard, expenses, reports, vendors, notices | view | view + add / edit / delete |
+| Own flat's dues and payment history | ✓ | all flats |
+| Own flat's details (owner, phones, family, vehicles) | edit own | view / edit all |
+| Record maintenance payments, set amounts | – | ✓ |
+| Approve members, link them to flats, make admins | – | ✓ |
+| Settings, activity log, backup / import | – | ✓ |
+
+Firestore security rules ([`firestore.rules`](firestore.rules)) enforce this on the server, not just in the screens.
+Residents can read payments only for their own flat. Monthly totals come from `meta/collections`.
 
 ## Features
 
-- **Home**: balance in hand, collected and spent this month and this financial year, a chart of collections against spending, a breakdown of spending by category, and the most recent expenses.
-- **Expenses**: add, edit or delete expenses, with a receipt photo or PDF. Filter by month, category or vendor, search, sort, and export to CSV for Excel.
-- **Dues**: a flats × months grid showing who has paid, a pending list with **Copy** and **WhatsApp** reminder buttons, and settings for the monthly amount (fixed or per sq. ft.).
-- **Reports**: a monthly statement laid out like the notebook page (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both can be printed or saved as PDF.
-- **My flat** (for residents): each flat signs in and keeps its own details up to date: owner name, owner or tenant, mobile/WhatsApp, email, family members, vehicles and an emergency contact. Other residents see only flat numbers and owner names. Phone numbers are visible only to that flat and the treasurer. WhatsApp reminders go straight to the saved mobile number.
-- **Vendors**: contracts, phone numbers, and AMC renewal alerts for anything expiring within 30 days.
-- **Notices**: announcements, with pinned notices shown on the home page.
-- **Settings**: society details, member approval (live mode), an activity log, and JSON backup and restore.
-- Installable on phones (PWA), light and dark themes, and colours taken from the building.
+- **Home:** balance in hand, collected and spent this month and this financial year, a chart of collections against spending, a breakdown by category, and recent expenses.
+- **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
+- **Dues:** a flats × months grid of who has paid, a pending list with Copy and WhatsApp reminders, and maintenance amount settings.
+- **My flat (residents):** dues history, plus the flat's own details, which are private to that flat and the admin.
+- **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
+- **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
+- Installable on phones, with light and dark themes and building colours.
 
-## Project layout
+## First-time setup (per environment)
 
+1. **Create a Firebase project.** Use one for prod (e.g. `svln-paradise`) and one for stage (e.g. `svln-paradise-stage`).
+   - **Build → Authentication:** enable **Google** and **Email/Password**. Under *Settings → Authorized domains*, add `venumadhavmahadevu1985.github.io`.
+   - **Build → Firestore Database:** create the database in production mode.
+   - Optional, for receipt uploads: **Build → Storage**.
+   - **Project settings → Your apps → Web:** register an app and copy the `firebaseConfig` object.
+2. Paste the configs into [`docs/js/config.js`](docs/js/config.js) under `prod` and `stage`. These values identify the project and are not secrets.
+3. Publish the security rules to each project:
+   ```bash
+   npm i -g firebase-tools
+   ```
+   ```bash
+   firebase login
+   ```
+   ```bash
+   firebase deploy --only firestore:rules,storage --project <project-id>
+   ```
+   You can also paste `firestore.rules` into *Firestore → Rules* in the console.
+4. Open the site and sign in. **The first person to sign in on an empty database becomes the admin** and sees
+   *Set up your society*. Do this straight after deploying.
+5. In **Settings → Data → Import data file**, choose `data/2026-10-notebook.json` to load October 2026.
+6. Share the link. Each resident signs in, enters their flat number, and you tap **Approve** in **Settings → Members**.
+
+## Data model (Firestore)
+
+| Collection | Fields |
+|---|---|
+| `public/info` | name, address (shown on the sign-in page) |
+| `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[] |
+| `meta/collections` | byMonth { 'YYYY-MM': total received } |
+| `flats/{flatNo}` | owner, sqft, override |
+| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone (private) |
+| `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path} |
+| `payments/{id}` | flatId, month, amount, paidOn, mode, ref |
+| `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes |
+| `notices/{id}` | title, body, date, pinned |
+| `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat |
+| `auditLog/{id}` | at, by, byName, action, entity, entityId, summary (append-only) |
+
+## Branches: stage and prod
+
+| Branch | Website | Firebase project |
+|---|---|---|
+| `prod` | `/SVLN/` | `firebaseConfigs.prod` |
+| `stage` | `/SVLN/stage/` (blue STAGE badge) | `firebaseConfigs.stage` |
+
+Work on `stage`, push it, and check the stage site. Then make it live:
+```bash
+git switch prod
 ```
-docs/                 ← the website (served by GitHub Pages / Firebase Hosting)
-  index.html, styles.css, icon.svg, manifest.webmanifest, sw.js
-  js/config.js        ← society defaults, categories, Firebase config
-  js/app.js           ← pages and logic
-  js/store.js         ← data layer (demo = browser storage, live = Firebase)
-  js/seed.js          ← starting data (October 2026 notebook page)
-  js/charts.js, js/util.js
-firestore.rules       ← who can read/write what
-storage.rules         ← receipt upload rules
-firebase.json
+```bash
+git merge --ff-only stage
 ```
-
-No build step is needed. These are plain HTML, CSS and JavaScript modules.
+```bash
+git push origin prod
+```
+Every push to either branch runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which publishes both sites.
 
 ## Run locally
 
 ```bash
 python -m http.server 5600 --directory docs
 ```
-
-Then open http://localhost:5600.
-
-## Data model
-
-| Collection | Fields |
-|---|---|
-| `flats/{flatNo}` | owner, sqft, override (custom monthly amount). Residents can change only `owner` on their own flat |
-| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone. Private: readable only by that flat and admins |
-| `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path} |
-| `payments/{id}` | flatId, month (YYYY-MM the dues are for), amount, paidOn, mode, ref |
-| `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes |
-| `notices/{id}` | title, body, date, pinned |
-| `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote |
-| `meta/collections` | byMonth { 'YYYY-MM': total received } (lets residents see totals without other flats' payments) |
-| `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat (set by the user while pending) |
-| `auditLog/{id}` | at, by, byName, action, entity, entityId, summary (append-only) |
-
-Every document also has createdAt/createdBy/updatedAt/updatedBy.
-
-## Demo mode vs live mode
-
-**Demo mode** (the default, `firebaseConfig = null`): data is saved only in the browser you use. Use the
-"View as" menu at the top to switch between the treasurer and a resident. This is fine for trying things out,
-but **residents opening the GitHub Pages link will only see the starting October data**, not your later entries.
-
-**Live mode** shares one set of accounts with everyone:
-
-1. Create a project at https://console.firebase.google.com (the free Spark plan is enough; receipt uploads
-   need Cloud Storage, which may ask you to enable billing on newer projects).
-2. Add a **Web app** and copy its config into `docs/js/config.js` under `firebaseConfigs.prod`. Repeat with a
-   second project (for example `svln-paradise-stage`) under `firebaseConfigs.stage`, and deploy the rules to both.
-3. In **Authentication**, turn on the **Google** and **Email/Password** sign-in methods, and add your
-   GitHub Pages domain (`venumadhavmahadevu1985.github.io`) under *Authorized domains*. Do this in both projects.
-4. Create the **Firestore** database and **Storage**, then publish the rules:
-   ```bash
-   npm i -g firebase-tools
-   firebase login
-   firebase use --add
-   firebase deploy --only firestore:rules,storage
-   ```
-5. Sign in to the site once. In Firestore → `users/<your uid>`, change `role` from `pending` to `admin`.
-6. Open **Settings**, check the society details, and enter the October 2026 data (or set *Tracking starts* to
-   2026-11 with a balance brought forward of ₹3,959 and continue from November).
-7. Share the site link in the building's WhatsApp group. Each resident signs in with Google or email and
-   enters their flat number. In **Settings → Members**, their flat is already selected, so tap **Approve**.
-   Several people from the same flat (for example a husband and wife) can each have their own login for that flat.
-8. Once approved, residents open **My flat** to add their details. They can also see the accounts and their dues.
-
-## Branches: stage and prod
-
-| Branch | Purpose | Website |
-|---|---|---|
-| `prod` | Live site that residents use | https://venumadhavmahadevu1985.github.io/SVLN/ |
-| `stage` | Test copy: try changes here first | https://venumadhavmahadevu1985.github.io/SVLN/stage/ |
-
-The stage site shows a blue **STAGE** badge in the header. It keeps its own data: its own demo data in the
-browser, and its own Firebase project once you fill in `firebaseConfigs.stage` in `docs/js/config.js`. That way
-testing never changes the real accounts. Running locally (`localhost`) also counts as stage.
-
-**Everyday flow**
-
-```bash
-git switch stage
-# …make and commit changes…
-git push origin stage
-```
-Check the result at `/SVLN/stage/`.
-
-```bash
-git switch prod
-git merge --ff-only stage
-git push origin prod
-```
-This makes the change live. If `--ff-only` refuses, someone committed straight to prod. In that case, merge prod into stage first.
-
-Every push to either branch runs `.github/workflows/pages.yml`, which builds `prod/docs` into the site root and
-`stage/docs` into `/stage/`, then publishes both.
-
-### One-time GitHub setup
-
-1. Push both branches: `git push -u origin prod stage`.
-2. **Settings → General → Default branch**: set it to `prod`.
-3. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
-4. **Settings → Environments → github-pages → Deployment branches and tags**: add `stage` alongside `prod`.
-   Without this, pushes to stage are blocked from deploying.
-5. Recommended: **Settings → Rules → Rulesets**, then add a rule for `prod` that blocks force pushes and deletion.
-6. Run the workflow once from the **Actions** tab (*Deploy prod + stage → Run workflow*), or just push again.
+Localhost counts as **stage**, so it uses the stage Firebase project.

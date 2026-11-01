@@ -14,9 +14,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       // New sign-ups can only create their own profile, as 'pending', without a flat.
+      // Exception: on an empty database (no public/info yet) the first person becomes admin and sets the society up.
       allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.role == 'pending'
-        && request.resource.data.keys().hasOnly(['email', 'name', 'role', 'createdAt']);
+        && request.resource.data.keys().hasOnly(['email', 'name', 'role', 'createdAt'])
+        && (request.resource.data.role == 'pending'
+            || (request.resource.data.role == 'admin' && !exists(/databases/$(db)/documents/public/info)));
       // While pending, they may say which flat they live in (the admin still has to approve it).
       allow update: if isAdmin()
         || (signedIn() && request.auth.uid == uid && resource.data.role == 'pending'
@@ -39,6 +41,9 @@ service cloud.firestore {
         'emergencyName', 'emergencyPhone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']));
       allow delete: if isAdmin();
     }
+
+    // Society name + address for the sign-in page (readable before sign-in).
+    match /public/{id} { allow read: if true; allow write: if isAdmin(); }
 
     // Shared accounts: every approved member can read, only admins can change.
     match /expenses/{id} { allow read: if isMember(); allow write: if isAdmin(); }
