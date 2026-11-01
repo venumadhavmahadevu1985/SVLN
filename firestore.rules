@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Roles live in users/{uid}.role: 'pending' (just signed up), 'resident', or 'admin'.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(db)/documents/users/$(request.auth.uid)).data; }
+    function hasProfile() { return signedIn() && exists(/databases/$(db)/documents/users/$(request.auth.uid)); }
+    function isAdmin() { return hasProfile() && profile().role == 'admin'; }
+    function isMember() { return hasProfile() && profile().role in ['admin', 'resident']; }
+
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      // New sign-ups can only create their own profile, as 'pending', without a flat.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'pending'
+        && request.resource.data.keys().hasOnly(['email', 'name', 'role', 'createdAt']);
+      allow update, delete: if isAdmin();
+    }
+
+    // Shared accounts: every approved member can read, only admins can change.
+    match /flats/{id}    { allow read: if isMember(); allow write: if isAdmin(); }
+    match /expenses/{id} { allow read: if isMember(); allow write: if isAdmin(); }
+    match /vendors/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
+    match /notices/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
+    match /meta/{id}     { allow read: if isMember(); allow write: if isAdmin(); }
+
+    // Residents see only their own flat's payments; monthly totals are in meta/collections.
+    match /payments/{id} {
+      allow read: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId);
+      allow write: if isAdmin();
+    }
+
+    // Append-only activity log.
+    match /auditLog/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.by == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

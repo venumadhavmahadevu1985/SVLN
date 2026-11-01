@@ -1,0 +1,13 @@
+{
+  "name": "SVLN Paradise Maintenance",
+  "short_name": "SVLN Paradise",
+  "description": "Maintenance collections, expenses and monthly statements for SVLN Paradise.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf6ec",
+  "theme_color": "#6d8216",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

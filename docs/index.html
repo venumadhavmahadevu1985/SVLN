@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SVLN Paradise · Maintenance</title>
+  <meta name="description" content="Maintenance collections, expenses and monthly statements for SVLN Paradise apartment residents.">
+  <meta name="theme-color" content="#6d8216">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div id="app">
+    <header class="topbar">
+      <a class="brand" href="#/dashboard">
+        <img src="icon.svg" alt="" width="36" height="36">
+        <span><strong id="brandName">SVLN Paradise</strong><small>Maintenance &amp; expenses</small></span>
+      </a>
+      <div class="topbar-right" id="userBox"></div>
+    </header>
+    <nav class="sidenav" id="nav" aria-label="Main"></nav>
+    <main id="view" tabindex="-1"><p class="empty">Loading…</p></main>
+    <nav class="bottomnav" id="bottomNav" aria-label="Main"></nav>
+  </div>
+  <dialog id="modal"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
