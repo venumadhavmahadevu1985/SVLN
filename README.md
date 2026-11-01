@@ -83,7 +83,16 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `prod` | `/SVLN/` | `firebaseConfigs.prod` |
 | `stage` | `/SVLN/stage/` (blue STAGE badge) | `firebaseConfigs.stage` |
 
-Work on `stage`, push it, and check the stage site. Then make it live:
+### Release rule: prod only on approval
+
+1. Every change goes to **`stage` first**. Push it, let CI pass, and check https://venumadhavmahadevu1985.github.io/SVLN/stage/.
+2. **Nothing is merged or pushed to `prod` until the owner explicitly says "deploy to PROD".**
+   Pushing to `prod` is what changes the live site that residents use.
+3. After approval, fast-forward `prod` to the tested `stage` commit (no direct commits on `prod`) and confirm
+   `https://venumadhavmahadevu1985.github.io/SVLN/version.txt` shows the new commit for prod. GitHub Pages caches
+   for up to 10 minutes.
+
+To make it live (only after approval):
 ```bash
 git switch prod
 ```
