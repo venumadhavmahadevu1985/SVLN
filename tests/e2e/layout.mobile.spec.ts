@@ -1,7 +1,7 @@
 import { test, expect, RESIDENT } from '../fixtures';
 
 // Runs in the "mobile" project (Pixel 7 viewport, touch).
-const ROUTES = ['dashboard', 'expenses', 'dues', 'reports', 'vendors', 'notices', 'settings'];
+const ROUTES = ['dashboard', 'expenses', 'dues', 'reports', 'staff', 'vendors', 'notices', 'settings'];
 
 test.describe('Phone layout', () => {
   test('no page scrolls sideways', async ({ app, page }) => {

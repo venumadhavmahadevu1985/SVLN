@@ -20,7 +20,7 @@ npm test
 npm run test:rules
 ```
 
-`npm test` runs the unit, desktop and phone projects (117 tests, about 20 s). `npm run test:rules` starts the
+`npm test` runs the unit, desktop and phone projects (131 tests, about 30 s). `npm run test:rules` starts the
 Firestore emulator, so it needs Java. GitHub Actions runs both on every push and pull request, and
 **the site is only published when every test passes** (`.github/workflows/pages.yml`).
 
@@ -44,6 +44,7 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
 | Expenses | `e2e/expenses.spec.ts` | add / edit / delete, totals flow to dashboard and statement, new category, validation (0, negative, decimal, required), filters (month, category, vendor, search, combined, none), sorting, CSV export, read-only for residents |
 | Dues | `e2e/dues.spec.ts` | grid states (paid, due, overdue, part-paid), record and remove payments, **late payment counts in its dues month (regression)**, overdue after the 10th, reminders and WhatsApp links, add or duplicate flat, custom amount, **amount change keeps past months (regression)**, billing by area with a zero-area warning, due-day range, resident view |
 | Reports | `e2e/reports.spec.ts` | October statement matches the notebook line for line, carry-forward, November, print, resident view, annual summary with negative net |
+| Staff and pay slips | `e2e/staff.spec.ts` | card details, Call/WhatsApp links, pay salary with bonus and advance, live net amount, slip contents, WhatsApp text, copy, print only the slip, duties on or off, duplicate-month warning, net ≤ ₹0 refused, salary expense opens its slip, slip history, commas in duties, staff not listed as vendors, delete keeps payments, resident view |
 | Notices and vendors | `e2e/notices-vendors.spec.ts` | post (pinned by default), unpinned, max 3 on Home, edit and delete, AMC renewing, expired and far-off, edit and delete vendor, resident restrictions |
 | Members, settings, data | `e2e/settings-members.spec.ts` | approve, make admin, move back to pending, rename, opening balance, categories and payment modes, FY start, required fields, backup JSON, import, re-import is idempotent, invalid or broken files |
 | Resident journey | `e2e/resident.spec.ts` | menu, blocked admin pages, own dues, update flat details (seen by admin), validation, role switch |
@@ -57,5 +58,6 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
    Amounts now have an "Applies from" month, and earlier months keep their old amount.
 2. **WhatsApp links broke for numbers typed with a leading 0** (`098480…`) or `0091…`.
 3. **Billing by area silently charged ₹0** to flats with no area. There is now a warning listing them.
+5. **The pay slip closed as soon as it opened.** A dialog closed itself after saving even when the save had opened the next dialog.
 4. **Statement receipts ×7 instead of ×8** when a payment was entered after the month ended (found on the live site,
    now covered by a regression test).

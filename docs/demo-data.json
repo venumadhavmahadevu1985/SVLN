@@ -328,12 +328,27 @@
     "vendors": [
       {
         "id": "watchman",
-        "name": "Watchman",
-        "service": "Watchman / Security",
+        "name": "Watchman (demo)",
+        "service": "Watchman",
         "phone": "",
         "contractAmount": 4000,
         "period": "Monthly",
-        "amcRenewal": ""
+        "amcRenewal": "",
+        "kind": "staff",
+        "role": "Watchman",
+        "salary": 4000,
+        "category": "Watchman / Security",
+        "payMode": "Cash",
+        "shift": "6 PM – 6 AM",
+        "joinedOn": "2025-06-01",
+        "duties": [
+          "Open and close the main gate; keep it locked 10 PM – 6 AM",
+          "Note visitors and delivery persons in the register",
+          "Switch common-area lights on at 6 PM and off at 6 AM",
+          "Run the water motor and check the overhead tank level",
+          "Keep the parking area and entrance clean",
+          "Inform the treasurer about any repairs or problems"
+        ]
       },
       {
         "id": "apepdcl",

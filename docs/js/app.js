@@ -65,6 +65,7 @@ const ICONS = {
   chat: 'M21 12a8 8 0 0 1-11.8 7L3 21l2-6A8 8 0 1 1 21 12z',
   left: 'M15 18l-6-6 6-6',
   right: 'M9 18l6-6-6-6',
+  people: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.1a4 4 0 0 1 0 7.8M22 21v-1a6 6 0 0 0-4-5.6',
   phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z',
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
@@ -247,7 +248,8 @@ function openModal(title, body, { onSubmit, submitLabel = 'Save', footer = '' } 
     if (!onSubmit) return;
     const btn = form.querySelector('[type=submit]'), err = form.querySelector('.form-error');
     btn.disabled = true; err.hidden = true;
-    try { await onSubmit(new FormData(form), form); closeModal(); }
+    // Close only if this form is still showing: a submit may open the next dialog (e.g. the pay slip).
+    try { await onSubmit(new FormData(form), form); if ($modal.querySelector('form') === form) closeModal(); }
     catch (ex) { console.error(ex); err.textContent = ex.message || String(ex); err.hidden = false; }
     finally { btn.disabled = false; }
   };
@@ -261,6 +263,7 @@ const NAV = [
   ['expenses', 'Expenses', 'receipt'],
   ['dues', 'Dues', 'wallet'],
   ['reports', 'Reports', 'chart'],
+  ['staff', 'Staff', 'people'],
   ['vendors', 'Vendors', 'tool'],
   ['notices', 'Notices', 'megaphone'],
   ['settings', 'Settings', 'gear', true],
@@ -314,7 +317,7 @@ function renderBare(html) {
 // ---------- routing ----------
 const VIEWS = {
   dashboard: viewDashboard, expenses: viewExpenses, dues: viewDues, reports: viewReports,
-  vendors: viewVendors, notices: viewNotices, settings: viewSettings,
+  staff: viewStaff, vendors: viewVendors, notices: viewNotices, settings: viewSettings,
 };
 
 function route() {
@@ -532,10 +535,13 @@ function showExpense(id) {
     </dl>
     ${r ? `<div class="receipt">${isImg ? `<img src="${esc(r.url)}" alt="Receipt for ${esc(e.description)}">` : ''}
       <a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener">${icon('clip')}<span>Open ${esc(r.name)}</span></a></div>`
-      : '<p class="muted">No receipt attached.</p>'}`,
+      : e.payslip ? '' : '<p class="muted">No receipt attached.</p>'}
+    ${e.payslip && isAdmin() ? '<p class="hint">This is a salary payment. To change it, delete it and pay again from Staff.</p>' : ''}`,
     {
-      footer: isAdmin() ? `<button type="button" class="btn danger-ghost" data-action="delete-expense" data-id="${esc(e.id)}">Delete</button>
-        <span class="spacer"></span><button type="button" class="btn primary" data-action="edit-expense" data-id="${esc(e.id)}">Edit</button>` : '',
+      footer: !isAdmin() ? '' : `<button type="button" class="btn danger-ghost" data-action="delete-expense" data-id="${esc(e.id)}">Delete</button>
+        <span class="spacer"></span>${e.payslip
+          ? `<button type="button" class="btn primary" data-action="view-slip" data-id="${esc(e.id)}">Pay slip</button>`
+          : `<button type="button" class="btn primary" data-action="edit-expense" data-id="${esc(e.id)}">Edit</button>`}`,
     });
 }
 
@@ -779,6 +785,212 @@ function profileModal(flatId) {
   });
 }
 
+// ---------- staff and pay slips ----------
+// Staff (watchman, cleaner…) are kept in the vendors collection with kind: 'staff', so they share
+// its access rules: every member can see their phone and duties, only admins change them.
+// A salary payment is an ordinary expense with a `payslip` snapshot (month, breakdown, duties) so
+// it counts in the monthly statement and the slip never changes when the profile is edited later.
+const staffList = () => S.db.vendors.filter(v => v.kind === 'staff').sort((a, b) => a.name.localeCompare(b.name));
+const staffById = id => S.db.vendors.find(v => v.id === id && v.kind === 'staff');
+const slipsFor = id => S.db.expenses.filter(e => e.payslip?.staffId === id)
+  .sort((a, b) => b.payslip.month.localeCompare(a.payslip.month) || b.date.localeCompare(a.date));
+const slipNo = e => `PS-${e.payslip.month}-${String(e.payslip.staffId).replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()}`;
+const telLink = n => `tel:${String(n).replace(/[^\d+]/g, '')}`;
+
+function upiLink(st, amount, month) {
+  const q = new URLSearchParams({ pa: st.upi, pn: st.name, am: String(amount), cu: 'INR', tn: `Salary ${monthLabel(month, true)}` });
+  return `upi://pay?${q}`;
+}
+
+function viewStaff() {
+  const list = staffList(), cm = curMonth();
+  return `
+    <div class="page-head"><div><h1>Staff</h1><p class="muted">Contact details and duties${isAdmin() ? ', salary payments and pay slips' : ''}.</p></div>
+      ${isAdmin() ? `<div class="actions"><button class="btn primary" data-action="add-staff">${icon('plus')}<span>Add staff</span></button></div>` : ''}</div>
+    <div class="cards">${list.map(st => {
+      const slips = slipsFor(st.id), paidNow = slips.some(e => e.payslip.month === cm), last = slips[0];
+      const wa = waNumber(st.phone);
+      return `
+      <article class="card vendor staff" data-staff="${esc(st.id)}">
+        <div class="vendor-top"><div><h2>${esc(st.name)}</h2><p class="muted">${esc(st.role || 'Staff')}${st.joinedOn ? ' · since ' + dateLabel(st.joinedOn) : ''}</p></div>
+          ${isAdmin() ? `<span class="badge ${paidNow ? 'ok' : 'warn'}">${monthLabel(cm)} ${paidNow ? 'paid' : 'not paid'}</span>` : ''}</div>
+        <dl class="details compact">
+          ${st.phone ? `<div><dt>Mobile</dt><dd><a href="${telLink(st.phone)}">${esc(st.phone)}</a></dd></div>` : ''}
+          ${st.shift ? `<div><dt>Working hours</dt><dd>${esc(st.shift)}</dd></div>` : ''}
+          ${isAdmin() && st.salary ? `<div><dt>Monthly salary</dt><dd>${money(st.salary)}</dd></div>` : ''}
+          ${isAdmin() && last ? `<div><dt>Last paid</dt><dd>${monthLabel(last.payslip.month, true)} · ${money(last.amount)}</dd></div>` : ''}
+        </dl>
+        ${st.duties?.length ? `<div><h3 class="duties-title">Duties</h3><ul class="duties">${st.duties.map(d => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
+        <div class="row-btns">
+          ${st.phone ? `<a class="btn sm ghost" href="${telLink(st.phone)}">${icon('phone')}<span>Call</span></a>` : ''}
+          ${wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}">${icon('chat')}<span>WhatsApp</span></a>` : ''}
+          ${isAdmin() ? `<button class="btn sm primary" data-action="pay-staff" data-id="${esc(st.id)}">${icon('wallet')}<span>Pay salary</span></button>
+            <button class="btn sm ghost" data-action="edit-staff" data-id="${esc(st.id)}">Edit</button>` : ''}
+        </div>
+        ${isAdmin() && slips.length ? `<details class="slips"><summary>Pay slips (${slips.length})</summary><div class="list">${slips.map(e => `
+          <button type="button" class="row slip-row" data-action="view-slip" data-id="${esc(e.id)}">
+            <span class="row-main"><strong>${monthLabel(e.payslip.month, true)}</strong><small>Paid ${dateLabel(e.date)}${e.mode ? ' · ' + esc(e.mode) : ''}</small></span>
+            <span class="row-amt">${money(e.amount)}</span></button>`).join('')}</div></details>` : ''}
+      </article>`; }).join('') || `<div class="card">${empty(isAdmin() ? 'No staff yet. Add the watchman with his phone number and duties.' : 'No staff details yet.')}</div>`}</div>`;
+}
+
+function staffModal(st) {
+  const isNew = !st;
+  st ||= { duties: [] };
+  const roleCat = categoryList().find(c => st.role && c.toLowerCase().includes(st.role.toLowerCase()));
+  openModal(isNew ? 'Add staff' : `Edit ${st.name}`, `
+    <div class="form-grid">
+      <label class="field"><span>Name</span><input name="name" required maxlength="60" value="${esc(st.name || '')}"></label>
+      <label class="field"><span>Role</span><input name="role" required maxlength="40" value="${esc(st.role || '')}" placeholder="e.g. Watchman"></label>
+      <label class="field"><span>Mobile</span><input type="tel" name="phone" maxlength="20" inputmode="tel" value="${esc(st.phone || '')}" placeholder="10-digit mobile number"></label>
+      <label class="field"><span>Monthly salary (₹)</span><input type="number" name="salary" min="0" step="1" value="${esc(st.salary || '')}"></label>
+      <label class="field"><span>Working hours</span><input name="shift" maxlength="60" value="${esc(st.shift || '')}" placeholder="e.g. 6 PM – 6 AM"></label>
+      <label class="field"><span>Joined on</span><input type="date" name="joinedOn" value="${esc(st.joinedOn || '')}"></label>
+      <label class="field span2"><span>Duties (one per line)</span><textarea name="duties" rows="6" maxlength="1500">${esc((st.duties || []).join('\n'))}</textarea></label>
+      <label class="field"><span>Expense category for salary</span><input name="category" required maxlength="60" list="staffCatList" value="${esc(st.category || roleCat || '')}"></label>
+      ${datalist('staffCatList', categoryList())}
+      <label class="field"><span>Usual payment mode</span><input name="payMode" maxlength="30" list="staffModeList" value="${esc(st.payMode || modeList()[0] || '')}"></label>
+      ${datalist('staffModeList', modeList())}
+      <label class="field span2"><span>UPI ID (optional)</span><input name="upi" maxlength="80" value="${esc(st.upi || '')}" placeholder="name@bank"></label>
+    </div>`, {
+    footer: isNew ? '' : `<button type="button" class="btn danger-ghost" data-action="delete-staff" data-id="${esc(st.id)}">Delete</button><span class="spacer"></span>`,
+    onSubmit: async fd => {
+      const doc = { ...st, kind: 'staff' };
+      for (const k of ['name', 'role', 'phone', 'shift', 'joinedOn', 'category', 'payMode', 'upi']) doc[k] = String(fd.get(k) || '').trim();
+      doc.salary = Math.round(Number(fd.get('salary')) || 0);
+      doc.duties = String(fd.get('duties') || '').split('\n').map(d => d.trim()).filter(Boolean); // duties may contain commas
+      // Keep the vendor fields in step so the person also reads sensibly anywhere vendors are listed.
+      Object.assign(doc, { service: doc.role, contractAmount: doc.salary, period: 'Monthly' });
+      await save('vendors', doc, `Staff: ${doc.name}${doc.role ? ' – ' + doc.role : ''}`);
+      await refresh(isNew ? 'Staff added' : 'Staff updated');
+    },
+  });
+}
+
+function payStaffModal(st, month = curMonth()) {
+  const already = slipsFor(st.id).filter(e => e.payslip.month === month);
+  openModal(`Pay ${st.name}`, `
+    ${already.length ? `<p class="banner warn"><span>${monthLabel(month, true)} salary was already paid on ${dateLabel(already[0].date)} (${money(already[0].amount)}).</span></p>` : ''}
+    <div class="form-grid">
+      <label class="field"><span>Salary for month</span><input type="month" name="month" required value="${month}"></label>
+      <label class="field"><span>Paid on</span><input type="date" name="paidOn" required value="${todayISO()}"></label>
+      <label class="field"><span>Monthly salary (₹)</span><input type="number" name="salary" required min="0" step="1" value="${esc(st.salary || '')}"></label>
+      <label class="field"><span>Extra / bonus (₹)</span><input type="number" name="extra" min="0" step="1" value="0"></label>
+      <label class="field"><span>Advance / deductions (₹)</span><input type="number" name="deductions" min="0" step="1" value="0"></label>
+      <label class="field"><span>Payment mode</span><input name="mode" maxlength="30" list="payStaffModes" value="${esc(st.payMode || modeList()[0] || '')}"></label>
+      ${datalist('payStaffModes', modeList())}
+      <label class="field span2"><span>Note on the slip (optional)</span><input name="note" maxlength="140" placeholder="e.g. ₹500 advance taken on 15 Oct"></label>
+      <label class="field check span2"><input type="checkbox" name="includeDuties"${st.duties?.length ? ' checked' : ' disabled'}><span>Show duties on the pay slip</span></label>
+    </div>
+    <p class="pay-net">Net paid: <strong data-net>${money(st.salary || 0)}</strong></p>`, {
+    submitLabel: 'Save payment',
+    onSubmit: async fd => {
+      const m = fd.get('month'), salary = Math.round(Number(fd.get('salary')) || 0);
+      const extra = Math.round(Number(fd.get('extra')) || 0), deductions = Math.round(Number(fd.get('deductions')) || 0);
+      const net = salary + extra - deductions;
+      if (!(net > 0)) throw new Error('Net paid must be more than ₹0. Check the deductions.');
+      const dup = slipsFor(st.id).find(e => e.payslip.month === m);
+      if (dup && !confirm(`${monthLabel(m, true)} salary for ${st.name} was already paid (${money(dup.amount)}). Record another payment?`)) return;
+      const payslip = {
+        staffId: st.id, month: m, salary, extra, deductions, note: String(fd.get('note') || '').trim(),
+        name: st.name, role: st.role || '', phone: st.phone || '', duties: fd.get('includeDuties') ? st.duties || [] : [],
+      };
+      const doc = {
+        date: fd.get('paidOn'), amount: net, category: st.category || st.role || 'Staff salary',
+        description: `${st.role || 'Staff'} salary – ${monthLabel(m, true)}`, vendor: st.name,
+        mode: String(fd.get('mode') || '').trim(), paidBy: S.settings.treasurer || S.user.name, payslip,
+      };
+      const saved = await save('expenses', doc, `${doc.description} — ${money(net)} to ${st.name}`);
+      await refresh('Salary payment recorded');
+      showSlip(saved.id);
+    },
+  });
+  // Keep the net figure in step while the treasurer types.
+  const form = $modal.querySelector('form'), out = form.querySelector('[data-net]');
+  form.addEventListener('input', () => {
+    const v = k => Math.round(Number(form.elements[k].value) || 0);
+    out.textContent = money(v('salary') + v('extra') - v('deductions'));
+  });
+}
+
+// WhatsApp text version of the slip (*bold* is WhatsApp formatting). Optional lines are null and dropped.
+function slipText(e) {
+  const p = e.payslip, line = (k, v) => `${k}: ${v}`;
+  return [
+    `*${societyName()}*`,
+    `Salary slip – ${monthLabel(p.month, true)}`,
+    line('Slip no', slipNo(e)),
+    '',
+    line('Name', `${p.name}${p.role ? ` (${p.role})` : ''}`),
+    p.phone ? line('Mobile', p.phone) : null,
+    line('Paid on', `${dateLabel(e.date)}${e.mode ? ' · ' + e.mode : ''}`),
+    '',
+    line('Monthly salary', money(p.salary)),
+    p.extra ? line('Extra / bonus', '+ ' + money(p.extra)) : null,
+    p.deductions ? line('Advance / deductions', '− ' + money(p.deductions)) : null,
+    `*${line('Net paid', money(e.amount))}*`,
+    p.note ? line('Note', p.note) : null,
+    ...(p.duties?.length ? ['', 'Duties:', ...p.duties.map(d => `• ${d}`)] : []),
+    '',
+    `Paid by ${e.paidBy || S.settings.treasurer || ''}. Thank you!`,
+  ].filter(l => l !== null).join('\n');
+}
+
+function slipHtml(e) {
+  const p = e.payslip;
+  const row = (k, v, cls = '') => `<tr class="${cls}"><td>${k}</td><td class="num">${v}</td></tr>`;
+  return `
+    <article class="slip">
+      <header class="st-head">
+        <div><img src="icon.svg" alt="" width="40" height="40"><div><h2>${esc(societyName())}</h2><p>${esc(S.settings.address || '')}</p></div></div>
+        <div class="st-title"><strong>Salary slip</strong><span>${monthLabel(p.month, true)}</span><small>${slipNo(e)}</small></div>
+      </header>
+      <dl class="details">
+        <div><dt>Name</dt><dd>${esc(p.name)}</dd></div>
+        <div><dt>Role</dt><dd>${esc(p.role || '—')}</dd></div>
+        ${p.phone ? `<div><dt>Mobile</dt><dd>${esc(p.phone)}</dd></div>` : ''}
+        <div><dt>Paid on</dt><dd>${dateLabel(e.date)}${e.mode ? ' · ' + esc(e.mode) : ''}</dd></div>
+      </dl>
+      <table class="st-table">
+        <tbody>
+          ${row('Monthly salary', money(p.salary))}
+          ${p.extra ? row('Extra / bonus', '+ ' + money(p.extra)) : ''}
+          ${p.deductions ? row('Advance / deductions', '− ' + money(p.deductions)) : ''}
+          ${row('Net paid', money(e.amount), 'grand')}
+        </tbody>
+      </table>
+      ${p.note ? `<p class="slip-note">Note: ${esc(p.note)}</p>` : ''}
+      ${p.duties?.length ? `<h3 class="st-section">Duties</h3><ul class="duties">${p.duties.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+      <footer class="slip-sign"><span>Paid by<br><strong>${esc(e.paidBy || '')}</strong></span><span>Received by<br><strong>${esc(p.name)}</strong></span></footer>
+    </article>`;
+}
+
+function showSlip(id) {
+  const e = S.db.expenses.find(x => x.id === id);
+  if (!e?.payslip) return;
+  const wa = waNumber(e.payslip.phone || staffById(e.payslip.staffId)?.phone);
+  openModal(`Pay slip · ${monthLabel(e.payslip.month, true)}`, slipHtml(e), {
+    footer: `<button type="button" class="btn ghost" data-action="print-slip" data-id="${esc(e.id)}">${icon('print')}<span>Print / PDF</span></button>
+      <button type="button" class="btn ghost" data-action="copy-slip" data-id="${esc(e.id)}">${icon('copy')}<span>Copy</span></button>
+      <span class="spacer"></span>
+      <a class="btn primary" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(slipText(e))}">${icon('chat')}<span>Send on WhatsApp</span></a>`,
+  });
+}
+
+// Prints only the slip: it is copied into #printArea and everything else is hidden by the print CSS.
+function printSlip(id) {
+  const e = S.db.expenses.find(x => x.id === id);
+  let area = document.getElementById('printArea');
+  if (!area) { area = Object.assign(document.createElement('div'), { id: 'printArea' }); document.body.append(area); }
+  area.innerHTML = slipHtml(e);
+  document.body.classList.add('print-slip');
+  closeModal();
+  const done = () => { document.body.classList.remove('print-slip'); area.innerHTML = ''; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+  setTimeout(() => { if (!matchMedia('print').matches) done(); }, 1000);
+}
+
 // ---------- reports ----------
 function viewReports() {
   const tab = S.ui.reportTab;
@@ -894,7 +1106,7 @@ function vendorBadge(v) {
 }
 
 function viewVendors() {
-  const list = [...S.db.vendors].sort((a, b) => (a.amcRenewal || '9999').localeCompare(b.amcRenewal || '9999') || a.name.localeCompare(b.name));
+  const list = S.db.vendors.filter(v => v.kind !== 'staff').sort((a, b) => (a.amcRenewal || '9999').localeCompare(b.amcRenewal || '9999') || a.name.localeCompare(b.name));
   const spentWith = name => sum(S.db.expenses.filter(e => e.vendor === name), e => e.amount);
   return `
     <div class="page-head"><div><h1>Vendors & contracts</h1><p class="muted">Service providers, contract amounts and AMC renewal dates.</p></div>
@@ -1205,6 +1417,19 @@ const ACTIONS = {
   'rfy-prev': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), -12); rerender(); },
   'rfy-next': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), 12); rerender(); },
 
+  'add-staff': () => staffModal(),
+  'edit-staff': ds => staffModal(staffById(ds.id)),
+  'pay-staff': ds => payStaffModal(staffById(ds.id)),
+  async 'delete-staff'(ds) {
+    const st = staffById(ds.id);
+    if (!confirm(`Delete ${st.name}? Past salary payments and pay slips are kept.`)) return;
+    await del('vendors', st.id, `Staff: ${st.name}`);
+    closeModal();
+    await refresh('Staff deleted');
+  },
+  'view-slip': ds => showSlip(ds.id),
+  'copy-slip': ds => copyText(slipText(S.db.expenses.find(e => e.id === ds.id)), 'Pay slip copied — paste it in WhatsApp'),
+  'print-slip': ds => printSlip(ds.id),
   'add-vendor': () => vendorModal(),
   'edit-vendor': ds => vendorModal(S.db.vendors.find(v => v.id === ds.id)),
   async 'delete-vendor'(ds) {

@@ -4,7 +4,7 @@ test.describe('Resident (Flat 302)', () => {
   test.beforeEach(async ({ app }) => { await app.open('dashboard', RESIDENT); });
 
   test('menu has My flat and no Settings', async ({ app, page }) => {
-    await expect(page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'My flat', 'Reports', 'Vendors', 'Notices']);
+    await expect(page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'My flat', 'Reports', 'Staff', 'Vendors', 'Notices']);
   });
 
   test('cannot open Settings even by typing the address', async ({ app }) => {

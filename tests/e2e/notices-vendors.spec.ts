@@ -80,7 +80,6 @@ test.describe('Vendors and AMC alerts', () => {
   };
 
   test('shows paid-so-far from expenses', async ({ app }) => {
-    await expect(app.main.locator('article.vendor', { hasText: 'Watchman' }).first()).toContainText('₹4,000');
     await expect(app.main.locator('article.vendor', { hasText: 'APEPDCL' })).toContainText('₹2,065');
   });
 

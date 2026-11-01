@@ -32,6 +32,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Dues:** a flats × months grid of who has paid, a pending list with Copy and WhatsApp reminders, and maintenance amount settings.
 - **My flat (residents):** dues history, plus the flat's own details, which are private to that flat and the admin.
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
+- **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
 - Installable on phones, with light and dark themes and building colours.
 
@@ -68,9 +69,9 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
 | `flats/{flatNo}` | owner, sqft, override |
 | `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone (private) |
-| `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path} |
+| `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path}; salary payments also have `payslip` {staffId, month, salary, extra, deductions, note, name, role, phone, duties[]} |
 | `payments/{id}` | flatId, month, amount, paidOn, mode, ref |
-| `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes |
+| `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes. Staff are vendors with `kind: 'staff'` plus role, salary, shift, joinedOn, duties[], category, payMode, upi |
 | `notices/{id}` | title, body, date, pinned |
 | `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat |
 | `auditLog/{id}` | at, by, byName, action, entity, entityId, summary (append-only) |

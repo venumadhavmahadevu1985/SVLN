@@ -45,12 +45,12 @@ test.describe('Dashboard — treasurer', () => {
   });
 
   test('admin sees every section in the menu, including Settings', async ({ app }) => {
-    await expect(app.page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'Dues', 'Reports', 'Vendors', 'Notices', 'Settings']);
+    await expect(app.page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'Dues', 'Reports', 'Staff', 'Vendors', 'Notices', 'Settings']);
   });
 
   test('menu links navigate and mark the current page', async ({ app }) => {
     for (const [link, heading] of [['Expenses', 'Expenses'], ['Dues', 'Maintenance dues'], ['Reports', 'Reports'],
-      ['Vendors', 'Vendors & contracts'], ['Notices', 'Notices'], ['Settings', 'Settings'], ['Home', 'Overview']]) {
+      ['Staff', 'Staff'], ['Vendors', 'Vendors & contracts'], ['Notices', 'Notices'], ['Settings', 'Settings'], ['Home', 'Overview']]) {
       await app.navLink(link).click();
       await expect(app.heading).toHaveText(heading);
       await expect(app.navLink(link)).toHaveAttribute('aria-current', 'page');

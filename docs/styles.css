@@ -317,6 +317,22 @@ table.data tfoot th { color: var(--text); border-bottom: 0; }
 .details.compact { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .notice.pinned { border-left: 4px solid var(--accent); }
 .notice-body { white-space: pre-line; margin-top: 8px; }
+
+/* staff and pay slips */
+.duties-title { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.duties { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.slips summary { cursor: pointer; font-weight: 600; color: var(--brand); padding: 6px 0; }
+.slip-row { grid-template-columns: minmax(0, 1fr) auto; }
+.pay-net { font-size: 17px; text-align: right; }
+.pay-net strong { font-size: 22px; color: var(--brand-strong); font-variant-numeric: tabular-nums; }
+.slip { display: flex; flex-direction: column; gap: 12px; }
+.slip .st-head { margin-bottom: 0; }
+.slip .st-title small { color: var(--muted); font-size: 12px; }
+.slip-note { color: var(--muted); font-size: 14px; }
+.slip-sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 28px; font-size: 13px; color: var(--muted); }
+.slip-sign span { border-top: 1px solid var(--border); padding-top: 6px; min-width: 40%; }
+.slip-sign strong { color: var(--text); }
+#printArea { display: none; }
 .audit { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; font-size: 14px; }
 .audit li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .audit time { color: var(--muted); font-size: 13px; }
@@ -376,4 +392,7 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
   main { padding: 0; max-width: none; }
   .statement { border: 0; padding: 0; }
   .table-scroll { overflow: visible; }
+  /* Pay slip printing: only the copy in #printArea is shown. */
+  body.print-slip > *:not(#printArea) { display: none !important; }
+  body.print-slip #printArea { display: block; padding: 0 8mm; }
 }
