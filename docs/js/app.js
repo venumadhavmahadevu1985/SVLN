@@ -1,4 +1,4 @@
-import { CATEGORIES, PAYMENT_MODES, VENDOR_PERIODS, DEFAULT_SETTINGS } from './config.js';
+import { CATEGORIES, PAYMENT_MODES, VENDOR_PERIODS, DEFAULT_SETTINGS, ENV } from './config.js';
 import { store } from './store.js';
 import { buildSeed } from './seed.js';
 import { barChart, donutChart } from './charts.js';
@@ -238,16 +238,16 @@ const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label=
 
 function renderChrome() {
   $('#brandName').textContent = S.settings.name;
-  document.title = `${S.settings.name} · Maintenance`;
-  let who = '';
+  document.title = `${ENV === 'stage' ? '[Stage] ' : ''}${S.settings.name} · Maintenance`;
+  let who = ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — changes here do not affect the live site">Stage</span>' : '';
   if (store.mode === 'demo') {
-    who = `<span class="pill">Demo</span>
+    who += `<span class="pill">Demo</span>
       <label class="sr-only" for="demoUser">View as</label>
       <select id="demoUser" class="select-sm" title="See the site as the treasurer or as a resident">
         ${demoUsers().map(u => `<option value="${esc(u.uid)}"${u.uid === S.user.uid ? ' selected' : ''}>${u.role === 'admin' ? 'Treasurer (admin)' : `Resident · Flat ${esc(u.flatId)}`}</option>`).join('')}
       </select>`;
   } else if (S.user) {
-    who = `<span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
+    who += `<span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
       <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
   }
   $('#userBox').innerHTML = who + themeBtn();

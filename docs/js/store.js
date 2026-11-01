@@ -1,6 +1,6 @@
 // Data layer. Both stores expose the same async API so the app doesn't care which one runs:
 //   list(col, [field, '==', value]?) · get(col, id) · put(col, doc) · remove(col, id) · upload(file)
-import { firebaseConfig } from './config.js';
+import { firebaseConfig, ENV } from './config.js';
 import { newId } from './util.js';
 
 const FIREBASE_VERSION = '10.12.2';
@@ -17,7 +17,7 @@ const readAsDataURL = file => new Promise((resolve, reject) => {
 // Demo mode: everything lives in this browser's localStorage (in memory if storage is blocked).
 class LocalStore {
   mode = 'demo';
-  key = 'svln-paradise-data-v1';
+  key = `svln-paradise-${ENV}-data-v1`; // stage and prod share an origin on GitHub Pages
 
   async init(seed) {
     try {

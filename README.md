@@ -77,9 +77,10 @@ but **residents opening the GitHub Pages link will only see the starting October
 
 1. Create a project at https://console.firebase.google.com (the free Spark plan is enough; receipt uploads
    need Cloud Storage, which may ask you to enable billing on newer projects).
-2. Add a **Web app** and copy its config into `docs/js/config.js` as `firebaseConfig`.
+2. Add a **Web app** and copy its config into `docs/js/config.js` under `firebaseConfigs.prod`. Repeat with a
+   second project (for example `svln-paradise-stage`) under `firebaseConfigs.stage`, and deploy the rules to both.
 3. In **Authentication**, turn on the **Google** and **Email/Password** sign-in methods, and add your
-   GitHub Pages domain (`venumadhavmahadevu1985.github.io`) under *Authorized domains*.
+   GitHub Pages domain (`venumadhavmahadevu1985.github.io`) under *Authorized domains*. Do this in both projects.
 4. Create the **Firestore** database and **Storage**, then publish the rules:
    ```bash
    npm i -g firebase-tools
@@ -95,8 +96,42 @@ but **residents opening the GitHub Pages link will only see the starting October
    Several people from the same flat (for example a husband and wife) can each have their own login for that flat.
 8. Once approved, residents open **My flat** to add their details. They can also see the accounts and their dues.
 
-## Publish on GitHub Pages
+## Branches: stage and prod
 
-1. Push this folder to https://github.com/venumadhavmahadevu1985/SVLN.
-2. On GitHub, go to **Settings → Pages → Build and deployment**: *Deploy from a branch*, branch `main`, folder `/docs`.
-3. The site will be at https://venumadhavmahadevu1985.github.io/SVLN/.
+| Branch | Purpose | Website |
+|---|---|---|
+| `prod` | Live site that residents use | https://venumadhavmahadevu1985.github.io/SVLN/ |
+| `stage` | Test copy: try changes here first | https://venumadhavmahadevu1985.github.io/SVLN/stage/ |
+
+The stage site shows a blue **STAGE** badge in the header. It keeps its own data: its own demo data in the
+browser, and its own Firebase project once you fill in `firebaseConfigs.stage` in `docs/js/config.js`. That way
+testing never changes the real accounts. Running locally (`localhost`) also counts as stage.
+
+**Everyday flow**
+
+```bash
+git switch stage
+# …make and commit changes…
+git push origin stage
+```
+Check the result at `/SVLN/stage/`.
+
+```bash
+git switch prod
+git merge --ff-only stage
+git push origin prod
+```
+This makes the change live. If `--ff-only` refuses, someone committed straight to prod. In that case, merge prod into stage first.
+
+Every push to either branch runs `.github/workflows/pages.yml`, which builds `prod/docs` into the site root and
+`stage/docs` into `/stage/`, then publishes both.
+
+### One-time GitHub setup
+
+1. Push both branches: `git push -u origin prod stage`.
+2. **Settings → General → Default branch**: set it to `prod`.
+3. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
+4. **Settings → Environments → github-pages → Deployment branches and tags**: add `stage` alongside `prod`.
+   Without this, pushes to stage are blocked from deploying.
+5. Recommended: **Settings → Rules → Rulesets**, then add a rule for `prod` that blocks force pushes and deletion.
+6. Run the workflow once from the **Actions** tab (*Deploy prod + stage → Run workflow*), or just push again.

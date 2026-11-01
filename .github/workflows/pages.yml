@@ -1,0 +1,60 @@
+# Publishes both environments to GitHub Pages in one site:
+#   prod  branch → https://venumadhavmahadevu1985.github.io/SVLN/
+#   stage branch → https://venumadhavmahadevu1985.github.io/SVLN/stage/
+# A push to either branch rebuilds the whole site from the latest commit of both.
+name: Deploy prod + stage
+
+on:
+  push:
+    branches: [prod, stage]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out prod
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+          path: prod
+
+      - name: Check out stage
+        uses: actions/checkout@v4
+        with:
+          ref: stage
+          path: stage
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/stage
+          cp -r prod/docs/. _site/
+          cp -r stage/docs/. _site/stage/
+          touch _site/.nojekyll
+          echo "prod  $(git -C prod rev-parse --short HEAD)"  >  _site/version.txt
+          echo "stage $(git -C stage rev-parse --short HEAD)" >> _site/version.txt
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
