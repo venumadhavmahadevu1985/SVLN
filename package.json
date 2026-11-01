@@ -8,7 +8,7 @@
     "test": "playwright test",
     "test:e2e": "playwright test --project=e2e --project=mobile",
     "test:unit": "playwright test --project=unit",
-    "test:rules": "npx -y firebase-tools@latest emulators:exec --only firestore --project demo-svln \"node --test tests/rules/\"",
+    "test:rules": "npx -y firebase-tools@latest emulators:exec --only firestore --project demo-svln \"node --test tests/rules/firestore.rules.test.mjs\"",
     "report": "playwright show-report"
   },
   "devDependencies": {
