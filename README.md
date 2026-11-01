@@ -88,19 +88,26 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 1. Every change goes to **`stage` first**. Push it, let CI pass, and check https://venumadhavmahadevu1985.github.io/SVLN/stage/.
 2. **Nothing is merged or pushed to `prod` until the owner explicitly says "deploy to PROD".**
    Pushing to `prod` is what changes the live site that residents use.
-3. After approval, fast-forward `prod` to the tested `stage` commit (no direct commits on `prod`) and confirm
-   `https://venumadhavmahadevu1985.github.io/SVLN/version.txt` shows the new commit for prod. GitHub Pages caches
-   for up to 10 minutes.
+3. After approval, merge the tested `stage` into `prod` with a **release merge commit** (`--no-ff`), push, and confirm
+   `https://venumadhavmahadevu1985.github.io/SVLN/version.txt` shows the new prod commit. GitHub Pages caches for up to 10 minutes.
+
+**Why a merge commit and not a fast-forward:** GitHub Pages ignores a deployment for a commit it has already
+deployed. The stage push already deployed the stage commit, with the *old* prod inside it. If `prod` is fast-forwarded to
+that same commit, prod's deployment is skipped and the live site keeps the old version. The release commit gives
+prod a new commit, so its deployment always goes live.
 
 To make it live (only after approval):
 ```bash
 git switch prod
 ```
 ```bash
-git merge --ff-only stage
+git merge --no-ff stage -m "Release to prod"
 ```
 ```bash
 git push origin prod
+```
+```bash
+git switch stage
 ```
 Every push to either branch runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which publishes both sites.
 
