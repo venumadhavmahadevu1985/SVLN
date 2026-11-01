@@ -1,0 +1,20 @@
+{
+  "name": "svln-paradise",
+  "private": true,
+  "type": "module",
+  "description": "Apartment maintenance website. The site itself (docs/) has no build step; this package only holds the tests.",
+  "scripts": {
+    "serve": "node tests/serve.mjs",
+    "test": "playwright test",
+    "test:e2e": "playwright test --project=e2e --project=mobile",
+    "test:unit": "playwright test --project=unit",
+    "test:rules": "npx -y firebase-tools@latest emulators:exec --only firestore --project demo-svln \"node --test tests/rules/\"",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@playwright/test": "^1.64.1",
+    "firebase": "^13.1.0",
+    "typescript": "^7.0.2"
+  }
+}

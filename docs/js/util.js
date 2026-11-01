@@ -54,3 +54,31 @@ export function fyLabel(startMk) {
 export const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
 export const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 export const trunc = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '…' : s;
+
+// wa.me needs the full international number without leading zeros; 10-digit Indian mobiles get +91
+// (so "098480 12345" and "0091 98480 12345" both work).
+export function waNumber(phone) {
+  const d = String(phone || '').replace(/\D/g, '').replace(/^0+/, '');
+  return d.length === 10 ? '91' + d : d.length >= 11 ? d : '';
+}
+
+// Firebase errors arrive as "Firebase: Error (auth/…)"; show residents something they can act on.
+export const AUTH_MESSAGES = {
+  'auth/email-already-in-use': 'An account with this email already exists. Use Sign in instead.',
+  'auth/invalid-credential': 'Email or password is wrong. New here? Use Create account.',
+  'auth/invalid-login-credentials': 'Email or password is wrong. New here? Use Create account.',
+  'auth/wrong-password': 'Wrong password. Try again.',
+  'auth/user-not-found': 'No account with this email. Use Create account.',
+  'auth/weak-password': 'Password must be at least 6 characters.',
+  'auth/invalid-email': 'That email address doesn\'t look right.',
+  'auth/too-many-requests': 'Too many attempts. Please wait a few minutes and try again.',
+  'auth/popup-closed-by-user': 'Google sign-in was closed before finishing.',
+  'auth/popup-blocked': 'The browser blocked the Google sign-in window. Allow pop-ups and try again.',
+  'auth/network-request-failed': 'No internet connection. Check your network and try again.',
+  'auth/unauthorized-domain': 'This website address is not allowed to sign in yet. Please tell the treasurer.',
+  'permission-denied': 'You don\'t have permission to do that.',
+};
+export function friendlyError(err) {
+  const code = err?.code || String(err?.message || '').match(/\(([^)]+)\)/)?.[1];
+  return AUTH_MESSAGES[code] || err?.message || String(err);
+}

@@ -1,13 +1,15 @@
-# Publishes both environments to GitHub Pages in one site:
+# Tests, then publishes all three sites to GitHub Pages in one deployment:
 #   prod  branch → https://venumadhavmahadevu1985.github.io/SVLN/
 #   stage branch → https://venumadhavmahadevu1985.github.io/SVLN/stage/
 #   prod  branch → https://venumadhavmahadevu1985.github.io/SVLN/demo/  (sample data, no database)
-# A push to either branch rebuilds the whole site from the latest commit of both.
+# A push to either branch runs the tests on that branch and, if they pass, rebuilds the whole site
+# from the latest commit of both branches.
 name: Deploy prod + stage
 
 on:
   push:
     branches: [prod, stage]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -16,11 +18,39 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  test:
+    name: Unit + end-to-end tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: playwright-report, retention-days: 14 }
+
+  rules:
+    name: Firestore security rules tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run test:rules
+
   build:
+    needs: [test, rules]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Check out prod

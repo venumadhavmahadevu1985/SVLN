@@ -2,3 +2,6 @@ node_modules/
 .firebase/
 .firebaserc
 *.log
+test-results/
+playwright-report/
+blob-report/

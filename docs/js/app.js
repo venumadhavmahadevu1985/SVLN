@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
-  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal,
+  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError,
 } from './util.js';
 
 // Technical fallbacks for settings fields that may be missing (not society data).
@@ -77,26 +77,6 @@ function toast(msg, kind = 'ok') {
   toast.timer = setTimeout(() => (t.className = ''), 3200);
 }
 
-// Firebase errors arrive as "Firebase: Error (auth/…)"; show residents something they can act on.
-const AUTH_MESSAGES = {
-  'auth/email-already-in-use': 'An account with this email already exists. Use Sign in instead.',
-  'auth/invalid-credential': 'Email or password is wrong. New here? Use Create account.',
-  'auth/invalid-login-credentials': 'Email or password is wrong. New here? Use Create account.',
-  'auth/wrong-password': 'Wrong password. Try again.',
-  'auth/user-not-found': 'No account with this email. Use Create account.',
-  'auth/weak-password': 'Password must be at least 6 characters.',
-  'auth/invalid-email': 'That email address doesn\'t look right.',
-  'auth/too-many-requests': 'Too many attempts. Please wait a few minutes and try again.',
-  'auth/popup-closed-by-user': 'Google sign-in was closed before finishing.',
-  'auth/popup-blocked': 'The browser blocked the Google sign-in window. Allow pop-ups and try again.',
-  'auth/network-request-failed': 'No internet connection. Check your network and try again.',
-  'auth/unauthorized-domain': 'This website address is not allowed to sign in yet. Please tell the treasurer.',
-  'permission-denied': 'You don\'t have permission to do that.',
-};
-function friendlyError(err) {
-  const code = err?.code || String(err?.message || '').match(/\(([^)]+)\)/)?.[1];
-  return AUTH_MESSAGES[code] || err?.message || String(err);
-}
 
 async function copyText(text, msg = 'Copied — paste it in WhatsApp') {
   try { await navigator.clipboard.writeText(text); }
@@ -145,13 +125,23 @@ function topCategories(exps) {
 
 // ---------- dues ----------
 const billingMonths = () => monthsBetween(S.settings.startMonth, curMonth());
-function dueAmount(f) {
+
+// Maintenance amount in force for a month. Each change is kept in settings.billingHistory with the
+// month it applies from, so raising the amount later never changes what earlier months owed.
+function billingFor(mk = curMonth()) {
+  const s = S.settings;
+  let rate = { billing: s.billing, fixedAmount: s.fixedAmount, ratePerSqft: s.ratePerSqft };
+  for (const e of [...(s.billingHistory || [])].sort((a, b) => a.from.localeCompare(b.from))) if (e.from <= mk) rate = e;
+  return rate;
+}
+function dueAmount(f, mk = curMonth()) {
   if (Number(f.override) > 0) return Number(f.override);
-  return S.settings.billing === 'sqft' ? Math.round((Number(f.sqft) || 0) * Number(S.settings.ratePerSqft)) : Number(S.settings.fixedAmount) || 0;
+  const r = billingFor(mk);
+  return r.billing === 'sqft' ? Math.round((Number(f.sqft) || 0) * Number(r.ratePerSqft)) : Number(r.fixedAmount) || 0;
 }
 const paymentsFor = (flatId, mk) => S.db.payments.filter(p => p.flatId === flatId && p.month === mk);
 function status(f, mk) {
-  const due = dueAmount(f), paid = sum(paymentsFor(f.id, mk), p => p.amount);
+  const due = dueAmount(f, mk), paid = sum(paymentsFor(f.id, mk), p => p.amount);
   if (paid >= due) return { key: 'paid', due, paid, label: 'Paid' };
   const overdue = todayISO() > `${mk}-${pad(Math.min(S.settings.dueDay, lastDay(mk)))}`;
   return { key: overdue ? 'overdue' : 'pending', due, paid, label: paid > 0 ? 'Partly paid' : overdue ? 'Overdue' : 'Due' };
@@ -568,7 +558,10 @@ function fyNav(fy, prevAction, nextAction) {
     <button class="icon-btn" data-action="${nextAction}" ${fy >= maxFy ? 'disabled' : ''} aria-label="Next year">${icon('right')}</button></div>`;
 }
 
-const billingSummary = () => `${S.settings.billing === 'sqft' ? `₹${S.settings.ratePerSqft}/sq. ft.` : money(S.settings.fixedAmount) + ' per flat'} each month · due by the ${ordinal(S.settings.dueDay)}`;
+const billingSummary = () => {
+  const r = billingFor();
+  return `${r.billing === 'sqft' ? `₹${r.ratePerSqft}/sq. ft.` : money(r.fixedAmount) + ' per flat'} each month · due by the ${ordinal(S.settings.dueDay)}`;
+};
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
@@ -626,21 +619,28 @@ function duesPending() {
 }
 
 function duesFlats() {
-  const s = S.settings;
+  const s = S.settings, r = billingFor();
+  const noArea = r.billing === 'sqft' ? S.db.flats.filter(f => !(Number(f.sqft) > 0) && !(Number(f.override) > 0)) : [];
+  const history = [...(s.billingHistory || [])].sort((a, b) => b.from.localeCompare(a.from));
   return `
     <form class="card stack" data-form="billing">
       <h2>Monthly maintenance amount</h2>
       <div class="radio-row">
-        <label><input type="radio" name="billing" value="fixed"${s.billing !== 'sqft' ? ' checked' : ''}> Same for every flat</label>
-        <label><input type="radio" name="billing" value="sqft"${s.billing === 'sqft' ? ' checked' : ''}> By flat area (₹ per sq. ft.)</label>
+        <label><input type="radio" name="billing" value="fixed"${r.billing !== 'sqft' ? ' checked' : ''}> Same for every flat</label>
+        <label><input type="radio" name="billing" value="sqft"${r.billing === 'sqft' ? ' checked' : ''}> By flat area (₹ per sq. ft.)</label>
       </div>
       <div class="form-grid three">
-        <label class="field"><span>Amount per flat (₹)</span><input type="number" name="fixedAmount" min="0" step="1" value="${esc(s.fixedAmount)}"></label>
-        <label class="field"><span>Rate per sq. ft. (₹)</span><input type="number" name="ratePerSqft" min="0" step="0.01" value="${esc(s.ratePerSqft)}"></label>
+        <label class="field"><span>Amount per flat (₹)</span><input type="number" name="fixedAmount" min="0" step="1" value="${esc(r.fixedAmount)}"></label>
+        <label class="field"><span>Rate per sq. ft. (₹)</span><input type="number" name="ratePerSqft" min="0" step="0.01" value="${esc(r.ratePerSqft)}"></label>
+        <label class="field"><span>Applies from (month)</span><input type="month" name="from" required value="${curMonth()}"></label>
         <label class="field"><span>Due by day of month</span><input type="number" name="dueDay" min="1" max="28" value="${esc(s.dueDay)}"></label>
       </div>
+      <p class="hint">Months before “Applies from” keep the amount they had, so past dues don't change.</p>
+      ${history.length ? `<p class="hint">History: ${history.map(e => `${e.billing === 'sqft' ? `₹${e.ratePerSqft}/sq. ft.` : money(e.fixedAmount)} from ${monthLabel(e.from, true)}`).join(' · ')}</p>` : ''}
       <div><button class="btn primary">Save amount</button></div>
     </form>
+    ${noArea.length ? `<div class="banner warn">${icon('wallet')}<div><strong>${noArea.length} flat${noArea.length === 1 ? ' has' : 's have'} no area set</strong>
+      <span>With billing by area, ${noArea.map(f => esc(f.id)).join(', ')} would owe ₹0. Add the area under Billing for each flat.</span></div></div>` : ''}
     <div class="card">
       <div class="card-head"><h2>Flats (${S.db.flats.length})</h2><button class="btn sm ghost" data-action="add-flat">${icon('plus')}<span>Add flat</span></button></div>
       ${S.db.flats.length ? `<div class="table-scroll"><table class="data">
@@ -732,12 +732,6 @@ function flatModal(f) {
 // ---------- flat details (each flat keeps its own; private to that flat and admins) ----------
 const PROFILE_FIELDS = ['occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles', 'emergencyName', 'emergencyPhone'];
 
-// wa.me needs the full international number; 10-digit Indian mobiles get +91.
-function waNumber(phone) {
-  const d = String(phone || '').replace(/\D/g, '');
-  return d.length === 10 ? '91' + d : d.length >= 11 ? d : '';
-}
-
 function flatDetailsCard(f) {
   const p = S.db.flatProfiles[f.id];
   const item = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
@@ -818,8 +812,9 @@ function monthlyReport() {
 
   // "Receipts (@ ₹1,000 × 8)" when every payment for this month's dues was the standard amount.
   const pays = isAdmin() ? S.db.payments.filter(p => (p.month || p.paidOn.slice(0, 7)) === mk) : [];
-  const uniform = pays.length && s.billing !== 'sqft' && pays.every(p => Number(p.amount) === Number(s.fixedAmount));
-  const receiptsLabel = uniform ? `Receipts (@ ${money(s.fixedAmount)} × ${pays.length})` : 'Receipts (maintenance collected)';
+  const rate = billingFor(mk);
+  const uniform = pays.length && rate.billing !== 'sqft' && pays.every(p => Number(p.amount) === Number(rate.fixedAmount));
+  const receiptsLabel = uniform ? `Receipts (@ ${money(rate.fixedAmount)} × ${pays.length})` : 'Receipts (maintenance collected)';
   const paidCount = S.db.flats.filter(f => status(f, mk).key === 'paid').length;
 
   return `
@@ -1242,9 +1237,17 @@ const ACTIONS = {
 
 const FORMS = {
   async billing(fd) {
+    const s = S.settings;
     const dueDay = Math.min(Math.max(parseInt(fd.get('dueDay'), 10) || FALLBACK.dueDay, 1), 28);
-    await saveSettings({ billing: fd.get('billing'), fixedAmount: Number(fd.get('fixedAmount')) || 0, ratePerSqft: Number(fd.get('ratePerSqft')) || 0, dueDay },
-      'Maintenance amount updated');
+    const rate = { billing: fd.get('billing'), fixedAmount: Number(fd.get('fixedAmount')) || 0, ratePerSqft: Number(fd.get('ratePerSqft')) || 0 };
+    const from = fd.get('from') || curMonth();
+    // The first change records what applied until now, from the month tracking started.
+    const history = s.billingHistory?.length ? s.billingHistory
+      : [{ from: s.startMonth, billing: s.billing, fixedAmount: s.fixedAmount, ratePerSqft: s.ratePerSqft }];
+    const billingHistory = [...history.filter(e => e.from !== from), { from, ...rate }].sort((a, b) => a.from.localeCompare(b.from));
+    const latest = billingHistory.at(-1);
+    await saveSettings({ billing: latest.billing, fixedAmount: latest.fixedAmount, ratePerSqft: latest.ratePerSqft, dueDay, billingHistory },
+      `Maintenance ${rate.billing === 'sqft' ? `₹${rate.ratePerSqft}/sq. ft.` : money(rate.fixedAmount)} from ${monthLabel(from, true)}`);
     await refresh('Maintenance amount saved');
   },
   async settings(fd) {
