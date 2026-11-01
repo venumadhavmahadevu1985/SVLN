@@ -158,6 +158,7 @@ body.bare .sidenav, body.bare .bottomnav { display: none !important; }
 .banner .ic { margin-top: 2px; color: var(--brand); }
 .banner strong { display: block; }
 .banner span { display: block; color: var(--muted); font-size: 14px; }
+.banner .banner-date { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .banner.notice { border-left-color: var(--accent); background: var(--accent-soft); }
 .banner.notice .ic { color: var(--accent); }
 .banner.warn { border-left-color: var(--warn); background: var(--warn-soft); }

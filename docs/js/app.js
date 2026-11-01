@@ -369,20 +369,22 @@ function viewDashboard() {
   const fyExp = S.db.expenses.filter(e => e.date.slice(0, 7) >= fy);
   const donut = topCategories(fyExp);
   const recent = [...S.db.expenses].sort((a, b) => byExpenseOrder(b, a)).slice(0, 5);
-  const pinned = S.db.notices.filter(n => n.pinned).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const pinned = S.db.notices.filter(n => n.pinned).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const prev = addMonths(cm, -1);
   const needsData = isAdmin() && !S.db.flats.length && !S.db.expenses.length;
   const waiting = isAdmin() ? S.db.users.filter(u => u.role === 'pending') : [];
 
   return `
-    <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div></div>
+    <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div>
+      ${isAdmin() ? `<div class="actions"><button class="btn ghost" data-action="add-notice">${icon('megaphone')}<span>Post notice</span></button></div>` : ''}</div>
     ${store.demo ? `<div class="banner info">${icon('home')}<div><strong>Demo with sample data</strong>
       <span>Use “View as” at the top to switch between the treasurer and a resident. Try anything — changes are not saved and reset when you reload.</span></div></div>` : ''}
     ${waiting.length ? `<a class="banner warn" href="#/settings">${icon('home')}<div>
       <strong>${waiting.length} ${waiting.length === 1 ? 'person is' : 'people are'} waiting for approval</strong>
       <span>${waiting.map(u => esc(u.name || u.email) + (u.requestedFlat ? ` (Flat ${esc(u.requestedFlat)})` : '')).join(', ')} · approve in Settings → Members</span></div></a>` : ''}
     ${needsData ?`<a class="banner info" href="#/settings">${icon('upload')}<div><strong>No accounts yet</strong><span>Add flats under Dues → Flats & amount, or import a data file in Settings.</span></div></a>` : ''}
-    ${pinned ? `<a class="banner notice" href="#/notices">${icon('megaphone')}<div><strong>${esc(pinned.title)}</strong><span>${esc(trunc(pinned.body, 140))}</span></div></a>` : ''}
+    ${pinned.map(n => `<a class="banner notice" href="#/notices">${icon('megaphone')}<div><strong>${esc(n.title)}</strong>
+      <span>${esc(trunc(n.body, 160))}</span><small class="banner-date">${dateLabel(n.date)}</small></div></a>`).join('')}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
     ${!isAdmin() && flatById(S.user.flatId) && !S.db.flatProfiles[S.user.flatId] ? `<a class="banner info" href="#/dues">${icon('home')}<div>
@@ -952,7 +954,7 @@ function viewNotices() {
 
 function noticeModal(n) {
   const isNew = !n;
-  n ||= { date: todayISO() };
+  n ||= { date: todayISO(), pinned: true };
   openModal(isNew ? 'Post notice' : 'Edit notice', `
     <div class="form-grid">
       <label class="field span2"><span>Title</span><input name="title" required maxlength="100" value="${esc(n.title || '')}"></label>
