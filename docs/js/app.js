@@ -10,7 +10,7 @@ import {
 // ---------- state & small helpers ----------
 const S = {
   user: null,
-  db: { flats: [], expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
+  db: { flats: [], flatProfiles: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...DEFAULT_SETTINGS },
   collections: {},
   route: 'dashboard',
@@ -134,8 +134,12 @@ async function loadData() {
     ['flats', 'expenses', 'vendors', 'notices', 'meta'].map(c => store.list(c)));
   const payments = isAdmin() ? await store.list('payments')
     : S.user.flatId ? await store.list('payments', ['flatId', '==', S.user.flatId]) : [];
+  // Contact details are private: admins load every flat's, residents only their own.
+  const profiles = isAdmin() ? await store.list('flatProfiles')
+    : S.user.flatId ? [await store.get('flatProfiles', S.user.flatId)].filter(Boolean) : [];
   S.db = {
     flats: flats.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })),
+    flatProfiles: Object.fromEntries(profiles.map(p => [p.id, p])),
     expenses, vendors, notices, payments, users: [], auditLog: [],
   };
   const settings = meta.find(m => m.id === 'settings') || {};
@@ -252,7 +256,7 @@ function renderChrome() {
 
 function renderNav() {
   const items = navItems();
-  const link = ([id, label, ic]) => `<a href="#/${id}" class="${S.route === id ? 'active' : ''}"${S.route === id ? ' aria-current="page"' : ''}>${icon(ic)}<span>${id === 'dues' && !isAdmin() ? 'My dues' : label}</span></a>`;
+  const link = ([id, label, ic]) => `<a href="#/${id}" class="${S.route === id ? 'active' : ''}"${S.route === id ? ' aria-current="page"' : ''}>${icon(ic)}<span>${id === 'dues' && !isAdmin() ? 'My flat' : label}</span></a>`;
   $('#nav').innerHTML = items.map(link).join('');
   const moreActive = items.slice(4).some(n => n[0] === S.route);
   $('#bottomNav').innerHTML = items.slice(0, 4).map(link).join('') +
@@ -322,6 +326,8 @@ function viewDashboard() {
     ${pinned ? `<a class="banner notice" href="#/notices">${icon('megaphone')}<div><strong>${esc(pinned.title)}</strong><span>${esc(trunc(pinned.body, 140))}</span></div></a>` : ''}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
+    ${!isAdmin() && flatById(S.user.flatId) && !S.db.flatProfiles[S.user.flatId] ? `<a class="banner info" href="#/dues">${icon('home')}<div>
+      <strong>Add your flat's details</strong><span>Owner name, phone number and family details help the treasurer reach you.</span></div></a>` : ''}
     <section class="kpis">
       ${kpi('Balance in hand', money(balanceThrough(cm)), `Brought forward ${money(balanceThrough(prev))}`, 'hero')}
       ${kpi(`Collected · ${monthLabel(cm)}`, money(coll[cm] || 0), `${monthLabel(prev)}: ${money(coll[prev] || 0)}`)}
@@ -544,7 +550,7 @@ function duesPending() {
           <strong class="row-amt">${money(o.total)}</strong>
           <div class="row-btns">
             <button class="btn sm ghost" data-action="copy-reminder" data-flat="${esc(f.id)}">${icon('copy')}<span>Copy</span></button>
-            <a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(reminderText(f, o))}">${icon('chat')}<span>WhatsApp</span></a>
+            <a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${waNumber(S.db.flatProfiles[f.id]?.phone)}?text=${encodeURIComponent(reminderText(f, o))}">${icon('chat')}<span>WhatsApp</span></a>
           </div>
         </div>`).join('')}</div>
     </div>`;
@@ -569,22 +575,27 @@ function duesFlats() {
     <div class="card">
       <div class="card-head"><h2>Flats (${S.db.flats.length})</h2><button class="btn sm ghost" data-action="add-flat">${icon('plus')}<span>Add flat</span></button></div>
       <div class="table-scroll"><table class="data">
-        <thead><tr><th>Flat</th><th>Owner / resident</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
-        <tbody>${S.db.flats.map(f => `<tr>
-          <td><strong>${esc(f.id)}</strong></td><td>${esc(f.owner) || '<span class="muted">Not set</span>'}</td>
+        <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
+        <tbody>${S.db.flats.map(f => { const p = S.db.flatProfiles[f.id]; return `<tr>
+          <td><strong>${esc(f.id)}</strong></td>
+          <td>${esc(f.owner) || '<span class="muted">Not set</span>'}${p?.occupancy === 'Tenant' && p.residentName ? `<br><small class="muted">Tenant: ${esc(p.residentName)}</small>` : p?.occupancy === 'Vacant' ? '<br><small class="muted">Vacant</small>' : ''}</td>
+          <td>${p?.phone ? `<a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>` : '<span class="muted">—</span>'}</td>
           <td class="num">${f.sqft || '—'}</td><td class="num">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
-          <td class="num"><button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Edit</button></td></tr>`).join('')}</tbody>
+          <td class="num"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
+            <button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Billing</button></div></td></tr>`; }).join('')}</tbody>
       </table></div>
     </div>`;
 }
 
 function duesResident() {
   const f = flatById(S.user.flatId);
-  if (!f) return `<div class="page-head"><div><h1>My dues</h1></div></div><div class="card">${empty('Your account is not linked to a flat yet. Ask the treasurer to link it.')}</div>`;
+  if (!f) return `<div class="page-head"><div><h1>My flat</h1></div></div><div class="card">${empty('Your account is not linked to a flat yet. Ask the treasurer to link it.')}</div>`;
   const o = outstanding(f);
   const months = billingMonths().slice().reverse();
   return `
-    <div class="page-head"><div><h1>My dues</h1><p class="muted">${esc(flatName(f))} · ${money(dueAmount(f))} per month, due by the ${S.settings.dueDay}th</p></div></div>
+    <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${S.settings.dueDay}th</p></div></div>
+    ${flatDetailsCard(f)}
+    <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
       : `<div class="banner ok">${icon('wallet')}<div><strong>All paid up</strong><span>Thank you!</span></div></div>`}
@@ -626,7 +637,7 @@ function payModal(flatId, mk) {
 function flatModal(f) {
   const isNew = !f;
   f ||= { id: '', owner: '', sqft: '', override: '' };
-  openModal(isNew ? 'Add flat' : `Edit flat ${f.id}`, `
+  openModal(isNew ? 'Add flat' : `Flat ${f.id} · billing`, `
     <div class="form-grid">
       <label class="field"><span>Flat number</span><input name="id" required maxlength="12" value="${esc(f.id)}" ${isNew ? '' : 'disabled'}></label>
       <label class="field"><span>Area (sq. ft.)</span><input type="number" name="sqft" min="0" value="${esc(f.sqft || '')}"></label>
@@ -643,6 +654,61 @@ function flatModal(f) {
       await store.put('flats', { ...doc, updatedAt: new Date().toISOString() });
       await audit(isNew ? 'create' : 'update', 'flats', id, `Flat ${id}${doc.owner ? ' – ' + doc.owner : ''}`);
       await refresh(isNew ? 'Flat added' : 'Flat updated');
+    },
+  });
+}
+
+// ---------- flat details (each flat keeps its own; private to that flat and admins) ----------
+const PROFILE_FIELDS = ['occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles', 'emergencyName', 'emergencyPhone'];
+
+// wa.me needs the full international number; 10-digit Indian mobiles get +91.
+function waNumber(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  return d.length === 10 ? '91' + d : d.length >= 11 ? d : '';
+}
+
+function flatDetailsCard(f) {
+  const p = S.db.flatProfiles[f.id];
+  const item = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
+  const tel = n => n ? `<a href="tel:${esc(n.replace(/\s/g, ''))}">${esc(n)}</a>` : '';
+  return `<div class="card">
+    <div class="card-head"><h2>Flat details</h2>
+      <button class="btn sm ${p ? 'ghost' : 'primary'}" data-action="edit-profile" data-id="${esc(f.id)}">${p ? 'Edit details' : 'Add details'}</button></div>
+    ${p ? `<dl class="details">
+        ${item('Owner', esc(f.owner))}${item('Living here', esc(p.occupancy))}${item('Tenant', esc(p.residentName))}
+        ${item('Mobile', tel(p.phone))}${item('Other phone', tel(p.altPhone))}${item('Email', esc(p.email))}
+        ${item('Family members', p.members ? esc(p.members) : '')}${item('Vehicles', esc(p.vehicles))}
+        ${item('Emergency contact', esc([p.emergencyName, p.emergencyPhone].filter(Boolean).join(' · ')))}
+      </dl>
+      <p class="hint">Updated ${p.updatedAt ? dateTimeLabel(p.updatedAt) : ''}${p.updatedBy ? ' by ' + esc(p.updatedBy) : ''}. Phone numbers are visible only to this flat and the treasurer.</p>`
+      : '<p class="muted">No details yet. Add the owner name and a phone number so the treasurer can reach this flat.</p>'}
+  </div>`;
+}
+
+function profileModal(flatId) {
+  const f = flatById(flatId), p = S.db.flatProfiles[flatId] || {};
+  openModal(`Flat ${flatId} details`, `
+    <p class="muted">Your name is shown to other residents. Phone numbers and other details are visible only to this flat and the treasurer.</p>
+    <div class="form-grid">
+      <label class="field span2"><span>Owner name</span><input name="owner" required maxlength="60" autocomplete="name" value="${esc(f.owner)}"></label>
+      <label class="field"><span>Living here</span><select name="occupancy">${opts(['Owner', 'Tenant', 'Vacant'], p.occupancy || 'Owner')}</select></label>
+      <label class="field"><span>Tenant name (if rented)</span><input name="residentName" maxlength="60" value="${esc(p.residentName || '')}"></label>
+      <label class="field"><span>Mobile (WhatsApp)</span><input type="tel" name="phone" maxlength="20" inputmode="tel" autocomplete="tel" value="${esc(p.phone || '')}" placeholder="10-digit mobile number"></label>
+      <label class="field"><span>Other phone</span><input type="tel" name="altPhone" maxlength="20" inputmode="tel" value="${esc(p.altPhone || '')}"></label>
+      <label class="field"><span>Email</span><input type="email" name="email" maxlength="80" autocomplete="email" value="${esc(p.email || '')}"></label>
+      <label class="field"><span>Family members</span><input type="number" name="members" min="0" max="20" value="${esc(p.members || '')}"></label>
+      <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(p.vehicles || '')}" placeholder="e.g. AP 31 AB 1234 (car), AP 31 CD 5678 (bike)"></label>
+      <label class="field"><span>Emergency contact name</span><input name="emergencyName" maxlength="60" value="${esc(p.emergencyName || '')}"></label>
+      <label class="field"><span>Emergency contact phone</span><input type="tel" name="emergencyPhone" maxlength="20" inputmode="tel" value="${esc(p.emergencyPhone || '')}"></label>
+    </div>`, {
+    onSubmit: async fd => {
+      const owner = fd.get('owner').trim();
+      if (owner !== (f.owner || '')) await save('flats', { ...f, owner }, `Flat ${flatId} owner name`);
+      const doc = { ...p, id: flatId };
+      for (const k of PROFILE_FIELDS) doc[k] = String(fd.get(k) || '').trim();
+      doc.members = Number(doc.members) || 0;
+      await save('flatProfiles', doc, `Flat ${flatId} details`);
+      await refresh('Details saved');
     },
   });
 }
@@ -861,7 +927,7 @@ function viewSettings() {
     ${store.mode === 'live' ? membersCard() : ''}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
-      <ul class="audit">${S.db.auditLog.map(a => `<li><time>${dateTimeLabel(a.at)}</time><span><strong>${esc(a.byName)}</strong> ${a.action}d ${esc(a.entity.replace(/s$/, ''))}: ${esc(a.summary)}</span></li>`).join('') || '<li class="muted">No activity yet.</li>'}</ul>
+      <ul class="audit">${S.db.auditLog.map(a => `<li><time>${dateTimeLabel(a.at)}</time><span><strong>${esc(a.byName)}</strong> ${a.action}d ${esc(ENTITY_LABELS[a.entity] || a.entity)}: ${esc(a.summary)}</span></li>`).join('') || '<li class="muted">No activity yet.</li>'}</ul>
     </div>
     ${store.mode === 'live' && !S.db.flats.length && !S.db.expenses.length ? `
     <div class="banner info"><div><strong>New Firebase database</strong><span>Load the 8 flats and the October 2026 notebook page (receipts ₹8,000, expenditure ₹8,010, balance ₹3,959) to start from.</span>
@@ -878,6 +944,11 @@ function viewSettings() {
     </div>`;
 }
 
+const ENTITY_LABELS = {
+  flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
+  notices: 'notice', meta: 'settings', users: 'member', all: 'data',
+};
+
 function membersCard() {
   const users = [...S.db.users].sort((a, b) => (a.role === 'pending' ? -1 : 0) - (b.role === 'pending' ? -1 : 0) || (a.name || '').localeCompare(b.name || ''));
   return `<div class="card">
@@ -885,10 +956,11 @@ function membersCard() {
     <div class="table-scroll"><table class="data">
       <thead><tr><th>Name</th><th>Role</th><th>Flat</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr data-uid="${esc(u.id)}">
-        <td><strong>${esc(u.name || '')}</strong><br><small class="muted">${esc(u.email || '')}</small></td>
-        <td><select class="select-sm" name="role">${opts(['pending', 'resident', 'admin'], u.role)}</select></td>
-        <td><select class="select-sm" name="flatId"><option value="">—</option>${opts(S.db.flats.map(f => f.id), u.flatId)}</select></td>
-        <td class="num"><button class="btn sm ghost" data-action="save-member" data-id="${esc(u.id)}">Save</button></td></tr>`).join('')}</tbody>
+        <td><strong>${esc(u.name || '')}</strong><br><small class="muted">${esc(u.email || '')}${u.phone ? ' · ' + esc(u.phone) : ''}</small>
+          ${u.role === 'pending' && u.requestedFlat ? `<br><span class="badge warn">Asks for Flat ${esc(u.requestedFlat)}</span>` : ''}</td>
+        <td><select class="select-sm" name="role">${opts(['pending', 'resident', 'admin'], u.role === 'pending' && u.requestedFlat ? 'resident' : u.role)}</select></td>
+        <td><select class="select-sm" name="flatId"><option value="">—</option>${opts(S.db.flats.map(f => f.id), u.flatId || u.requestedFlat)}</select></td>
+        <td class="num"><button class="btn sm ${u.role === 'pending' ? 'primary' : 'ghost'}" data-action="save-member" data-id="${esc(u.id)}">${u.role === 'pending' ? 'Approve' : 'Save'}</button></td></tr>`).join('')}</tbody>
     </table></div></div>`;
 }
 
@@ -896,7 +968,7 @@ function backupJson() {
   return JSON.stringify({
     app: 'svln-paradise', version: 1, exportedAt: new Date().toISOString(),
     settings: S.settings, collections: S.collections,
-    flats: S.db.flats, expenses: S.db.expenses, payments: S.db.payments, vendors: S.db.vendors, notices: S.db.notices,
+    flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses, payments: S.db.payments, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
 }
 
@@ -904,7 +976,7 @@ function backupToStore(b) {
   if (b.app !== 'svln-paradise' || !Array.isArray(b.flats) || !Array.isArray(b.expenses)) throw new Error('This is not an SVLN Paradise backup file.');
   const map = arr => Object.fromEntries((arr || []).map(d => [d.id, d]));
   return {
-    flats: map(b.flats), expenses: map(b.expenses), payments: map(b.payments), vendors: map(b.vendors), notices: map(b.notices),
+    flats: map(b.flats), flatProfiles: map(b.flatProfiles), expenses: map(b.expenses), payments: map(b.payments), vendors: map(b.vendors), notices: map(b.notices),
     meta: { settings: { ...b.settings, id: 'settings' }, collections: { id: 'collections', byMonth: b.collections || {} } },
     auditLog: { restored: { id: 'restored', at: new Date().toISOString(), by: S.user.uid, byName: S.user.name, action: 'create', entity: 'all', entityId: '', summary: 'Backup restored' } },
   };
@@ -936,8 +1008,16 @@ function renderPending() {
   $view.innerHTML = `
     <section class="auth card">
       <img src="icon.svg" alt="" width="64" height="64">
-      <h1>Waiting for approval</h1>
-      <p>You're signed in as <strong>${esc(S.user.email)}</strong>. The treasurer needs to approve your account and link it to your flat.</p>
+      <h1>${S.user.requestedFlat ? 'Waiting for approval' : 'Which flat is yours?'}</h1>
+      <p>You're signed in as <strong>${esc(S.user.email)}</strong>.
+        ${S.user.requestedFlat ? `You asked to join <strong>Flat ${esc(S.user.requestedFlat)}</strong>. The treasurer will approve it soon. You can change the details below if needed.`
+          : 'Tell us your flat number. The treasurer will approve it once, and after that you can see the accounts and update your flat\'s details.'}</p>
+      <form data-form="request-flat" class="stack">
+        <label class="field"><span>Flat number</span><input name="requestedFlat" required maxlength="12" inputmode="numeric" placeholder="e.g. 302" value="${esc(S.user.requestedFlat || '')}"></label>
+        <label class="field"><span>Your name</span><input name="name" required maxlength="60" autocomplete="name" value="${esc(S.user.name || '')}"></label>
+        <label class="field"><span>Mobile</span><input type="tel" name="phone" maxlength="20" inputmode="tel" autocomplete="tel" value="${esc(S.user.phone || '')}"></label>
+        <button class="btn primary">${S.user.requestedFlat ? 'Update request' : 'Send request'}</button>
+      </form>
       <button class="btn ghost" data-action="sign-out">Sign out</button>
     </section>`;
 }
@@ -989,6 +1069,7 @@ const ACTIONS = {
   'copy-reminder': ds => { const f = flatById(ds.flat); return copyText(reminderText(f, outstanding(f))); },
   'copy-all-reminders': () => copyText(S.db.flats.map(f => ({ f, o: outstanding(f) })).filter(r => r.o.total > 0)
     .map(r => reminderText(r.f, r.o)).join('\n\n')),
+  'edit-profile': ds => profileModal(ds.id),
   'add-flat': () => flatModal(),
   'edit-flat': ds => flatModal(flatById(ds.id)),
   async 'delete-flat'(ds) {
@@ -1061,6 +1142,14 @@ const FORMS = {
     patch.fyStartMonth = Number(fd.get('fyStartMonth')) || 4;
     await saveSettings(patch, 'Society settings updated');
     await refresh('Settings saved');
+  },
+  async 'request-flat'(fd) {
+    const prof = await store.get('users', S.user.uid);
+    const patch = { requestedFlat: fd.get('requestedFlat').trim(), name: fd.get('name').trim(), phone: fd.get('phone').trim() };
+    await store.put('users', { ...prof, ...patch });
+    Object.assign(S.user, patch);
+    renderPending();
+    toast('Request sent to the treasurer');
   },
   async login(fd) {
     const email = fd.get('email').trim(), pw = fd.get('password');
@@ -1156,7 +1245,7 @@ async function boot() {
         prof = { id: fbUser.uid, email: fbUser.email, name: fbUser.displayName || fbUser.email, role: 'pending', createdAt: new Date().toISOString() };
         await store.put('users', prof);
       }
-      S.user = { uid: fbUser.uid, email: prof.email, name: prof.name, role: prof.role, flatId: prof.flatId };
+      S.user = { uid: fbUser.uid, email: prof.email, name: prof.name, role: prof.role, flatId: prof.flatId, requestedFlat: prof.requestedFlat, phone: prof.phone };
       if (!['admin', 'resident'].includes(prof.role)) return renderPending();
       await start();
     } catch (err) { console.error(err); toast(err.message || String(err), 'bad'); }

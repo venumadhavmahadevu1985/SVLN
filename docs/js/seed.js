@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS } from './config.js';
 
 export function buildSeed() {
   const now = new Date().toISOString(), by = 'Notebook (Oct 2026)';
-  const db = { flats: {}, expenses: {}, payments: {}, vendors: {}, notices: {}, meta: {}, auditLog: {} };
+  const db = { flats: {}, flatProfiles: {}, expenses: {}, payments: {}, vendors: {}, notices: {}, meta: {}, auditLog: {} };
   const settings = { ...DEFAULT_SETTINGS, id: 'settings' };
   db.meta.settings = settings;
 

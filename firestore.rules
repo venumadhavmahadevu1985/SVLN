@@ -8,6 +8,8 @@ service cloud.firestore {
     function hasProfile() { return signedIn() && exists(/databases/$(db)/documents/users/$(request.auth.uid)); }
     function isAdmin() { return hasProfile() && profile().role == 'admin'; }
     function isMember() { return hasProfile() && profile().role in ['admin', 'resident']; }
+    function isMyFlat(flatId) { return isMember() && profile().flatId == flatId; }
+    function changedOnly(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
 
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
@@ -15,11 +17,30 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.role == 'pending'
         && request.resource.data.keys().hasOnly(['email', 'name', 'role', 'createdAt']);
-      allow update, delete: if isAdmin();
+      // While pending, they may say which flat they live in (the admin still has to approve it).
+      allow update: if isAdmin()
+        || (signedIn() && request.auth.uid == uid && resource.data.role == 'pending'
+            && changedOnly(['requestedFlat', 'name', 'phone']));
+      allow delete: if isAdmin();
+    }
+
+    // Flats: everyone sees flat numbers and owner names; a resident may change only their own owner name.
+    match /flats/{id} {
+      allow read: if isMember();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isMyFlat(id) && changedOnly(['owner', 'updatedAt', 'updatedBy']));
+    }
+
+    // Private flat details (phones, family, vehicles): only that flat's residents and admins.
+    match /flatProfiles/{id} {
+      allow read: if isAdmin() || isMyFlat(id);
+      allow create, update: if isAdmin() || (isMyFlat(id) && request.resource.data.keys().hasOnly([
+        'occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles',
+        'emergencyName', 'emergencyPhone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']));
+      allow delete: if isAdmin();
     }
 
     // Shared accounts: every approved member can read, only admins can change.
-    match /flats/{id}    { allow read: if isMember(); allow write: if isAdmin(); }
     match /expenses/{id} { allow read: if isMember(); allow write: if isAdmin(); }
     match /vendors/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
     match /notices/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
@@ -34,7 +55,7 @@ service cloud.firestore {
     // Append-only activity log.
     match /auditLog/{id} {
       allow read: if isAdmin();
-      allow create: if isAdmin() && request.resource.data.by == request.auth.uid;
+      allow create: if isMember() && request.resource.data.by == request.auth.uid;
       allow update, delete: if false;
     }
   }

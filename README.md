@@ -19,6 +19,7 @@ It starts with the **October 2026** page from the society notebook:
 - **Expenses**: add, edit or delete expenses, with a receipt photo or PDF. Filter by month, category or vendor, search, sort, and export to CSV for Excel.
 - **Dues**: a flats × months grid showing who has paid, a pending list with **Copy** and **WhatsApp** reminder buttons, and settings for the monthly amount (fixed or per sq. ft.).
 - **Reports**: a monthly statement laid out like the notebook page (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both can be printed or saved as PDF.
+- **My flat** (for residents): each flat signs in and keeps its own details up to date: owner name, owner or tenant, mobile/WhatsApp, email, family members, vehicles and an emergency contact. Other residents see only flat numbers and owner names. Phone numbers are visible only to that flat and the treasurer. WhatsApp reminders go straight to the saved mobile number.
 - **Vendors**: contracts, phone numbers, and AMC renewal alerts for anything expiring within 30 days.
 - **Notices**: announcements, with pinned notices shown on the home page.
 - **Settings**: society details, member approval (live mode), an activity log, and JSON backup and restore.
@@ -53,14 +54,15 @@ Then open http://localhost:5600.
 
 | Collection | Fields |
 |---|---|
-| `flats/{flatNo}` | owner, sqft, override (custom monthly amount) |
+| `flats/{flatNo}` | owner, sqft, override (custom monthly amount). Residents can change only `owner` on their own flat |
+| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone. Private: readable only by that flat and admins |
 | `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path} |
 | `payments/{id}` | flatId, month (YYYY-MM the dues are for), amount, paidOn, mode, ref |
 | `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes |
 | `notices/{id}` | title, body, date, pinned |
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote |
 | `meta/collections` | byMonth { 'YYYY-MM': total received } (lets residents see totals without other flats' payments) |
-| `users/{uid}` | email, name, role (pending / resident / admin), flatId |
+| `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat (set by the user while pending) |
 | `auditLog/{id}` | at, by, byName, action, entity, entityId, summary (append-only) |
 
 Every document also has createdAt/createdBy/updatedAt/updatedBy.
@@ -88,7 +90,10 @@ but **residents opening the GitHub Pages link will only see the starting October
 5. Sign in to the site once. In Firestore → `users/<your uid>`, change `role` from `pending` to `admin`.
 6. Open **Settings**, check the society details, and enter the October 2026 data (or set *Tracking starts* to
    2026-11 with a balance brought forward of ₹3,959 and continue from November).
-7. Residents sign in, and you approve each one in **Settings → Members** and link them to their flat.
+7. Share the site link in the building's WhatsApp group. Each resident signs in with Google or email and
+   enters their flat number. In **Settings → Members**, their flat is already selected, so tap **Approve**.
+   Several people from the same flat (for example a husband and wife) can each have their own login for that flat.
+8. Once approved, residents open **My flat** to add their details. They can also see the accounts and their dues.
 
 ## Publish on GitHub Pages
 
