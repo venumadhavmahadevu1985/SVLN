@@ -1,7 +1,9 @@
-// Which copy of the site is running. The stage branch is published under /stage/ and is
-// also what you get on localhost, so tests never touch the real (prod) database.
-export const ENV = /\/stage(\/|$)/.test(location.pathname) || ['localhost', '127.0.0.1'].includes(location.hostname)
-  ? 'stage' : 'prod';
+// Which copy of the site is running. /demo/ (or ?demo) is the shareable demo with sample data
+// and no database. The stage branch is published under /stage/ and is also what you get on
+// localhost, so tests never touch the real (prod) database.
+export const ENV = /\/demo(\/|$)/.test(location.pathname) || new URLSearchParams(location.search).has('demo') ? 'demo'
+  : /\/stage(\/|$)/.test(location.pathname) || ['localhost', '127.0.0.1'].includes(location.hostname) ? 'stage'
+  : 'prod';
 
 // Firebase web app config for each environment (Firebase console → Project settings → Your apps).
 // These values identify the project; they are not secrets. Access is enforced by firestore.rules.

@@ -1,6 +1,7 @@
 # Publishes both environments to GitHub Pages in one site:
 #   prod  branch → https://venumadhavmahadevu1985.github.io/SVLN/
 #   stage branch → https://venumadhavmahadevu1985.github.io/SVLN/stage/
+#   prod  branch → https://venumadhavmahadevu1985.github.io/SVLN/demo/  (sample data, no database)
 # A push to either branch rebuilds the whole site from the latest commit of both.
 name: Deploy prod + stage
 
@@ -36,9 +37,10 @@ jobs:
 
       - name: Assemble site
         run: |
-          mkdir -p _site/stage
+          mkdir -p _site/stage _site/demo
           cp -r prod/docs/. _site/
           cp -r stage/docs/. _site/stage/
+          cp -r prod/docs/. _site/demo/
           touch _site/.nojekyll
           echo "prod  $(git -C prod rev-parse --short HEAD)"  >  _site/version.txt
           echo "stage $(git -C stage rev-parse --short HEAD)" >> _site/version.txt

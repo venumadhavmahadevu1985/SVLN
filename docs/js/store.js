@@ -1,6 +1,6 @@
 // Data layer: Firebase Auth + Firestore + Storage. Every piece of data the site shows comes from here.
 //   list(col, [field, '==', value]?) · get(col, id) · put(col, doc) · remove(col, id) · upload(file)
-import { firebaseConfig } from './config.js';
+import { firebaseConfig, ENV } from './config.js';
 import { newId } from './util.js';
 
 const FIREBASE_VERSION = '10.12.2';
@@ -54,5 +54,38 @@ class FirebaseStore {
   }
 }
 
+// Demo site (/demo/): sample data from demo-data.json kept in memory only. Visitors switch between
+// demo accounts instead of signing in; reloading the page resets everything.
+class DemoStore {
+  demo = true;
+
+  async init() {
+    const d = await (await fetch('demo-data.json', { cache: 'no-store' })).json();
+    this.db = {};
+    for (const [col, docs] of Object.entries(d.collections)) for (const doc of docs) this._set(col, doc);
+    this.accounts = d.accounts;
+    for (const a of this.accounts) this._set('users', a);
+    this.current = this.accounts[0];
+  }
+  _set(col, doc) { (this.db[col] ||= {})[doc.id] = structuredClone(doc); }
+  _auth() { return { uid: this.current.id, email: this.current.email, displayName: this.current.name }; }
+  onAuth(cb) { this.cb = cb; cb(this._auth()); }
+  switchAccount(id) { this.current = this.accounts.find(a => a.id === id) || this.accounts[0]; this.cb(this._auth()); }
+  signOut() {}
+
+  async list(col, where) {
+    let arr = Object.values(this.db[col] || {}).map(d => structuredClone(d));
+    if (where) arr = arr.filter(d => d[where[0]] === where[2]);
+    return arr;
+  }
+  async get(col, id) { const d = this.db[col]?.[id]; return d ? structuredClone(d) : null; }
+  async put(col, doc) { const d = { ...doc, id: doc.id || newId() }; this._set(col, d); return d; }
+  async remove(col, id) { delete this.db[col]?.[id]; }
+  async upload(file) {
+    if (file.size > MAX_RECEIPT) throw new Error('Receipts must be under 5 MB.');
+    return { name: file.name, url: URL.createObjectURL(file) };
+  }
+}
+
 // null until this environment's Firebase config is filled in (the app then shows setup instructions).
-export const store = firebaseConfig ? new FirebaseStore() : null;
+export const store = ENV === 'demo' ? new DemoStore() : firebaseConfig ? new FirebaseStore() : null;

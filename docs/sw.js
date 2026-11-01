@@ -1,5 +1,6 @@
 // Network-first service worker: always tries for fresh files, falls back to the cache offline.
-const CACHE = `svln-paradise-${self.registration.scope.includes('/stage/') ? 'stage' : 'prod'}-v1`;
+const SCOPE = self.registration.scope;
+const CACHE = `svln-paradise-${SCOPE.includes('/demo/') ? 'demo' : SCOPE.includes('/stage/') ? 'stage' : 'prod'}-v1`;
 const SHELL = ['./', 'index.html', 'styles.css', 'icon.svg', 'manifest.webmanifest',
   'js/app.js', 'js/store.js', 'js/charts.js', 'js/util.js', 'js/config.js'];
 

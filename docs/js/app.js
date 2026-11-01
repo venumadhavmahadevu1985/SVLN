@@ -272,20 +272,29 @@ const NAV = [
 const navItems = () => NAV.filter(n => !n[3] || isAdmin());
 
 const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label="Switch light or dark theme" title="Light / dark">${icon('moon')}</button>`;
-const stagePill = () => ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — uses the stage database, not the live one">Stage</span>' : '';
+const stagePill = () => ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — uses the stage database, not the live one">Stage</span>'
+  : ENV === 'demo' ? '<span class="pill" title="Sample data — nothing you change here is saved">Demo</span>' : '';
 
 function renderBrand() {
   const name = societyName();
   $('#brandName').textContent = name || 'Maintenance';
   $('#brandSub').textContent = name ? 'Maintenance & expenses' : '';
-  document.title = `${ENV === 'stage' ? '[Stage] ' : ''}${name ? name + ' · ' : ''}Maintenance`;
+  const tag = { stage: '[Stage] ', demo: '[Demo] ' }[ENV] || '';
+  document.title = `${tag}${name ? name + ' · ' : ''}Maintenance`;
 }
+
+// Demo visitors pick which sample account to look through instead of signing in.
+const demoSwitcher = () => `<label class="sr-only" for="demoAccount">View as</label>
+  <select id="demoAccount" class="select-sm" data-change="demo-account" title="See the site as the treasurer or as a resident">
+    ${store.accounts.map(a => `<option value="${esc(a.id)}"${a.id === S.user?.uid ? ' selected' : ''}>${esc(a.label || a.name)}</option>`).join('')}
+  </select>`;
 
 function renderChrome() {
   renderBrand();
-  $('#userBox').innerHTML = stagePill() + (S.user ? `
+  const who = !S.user ? '' : store.demo ? demoSwitcher() : `
     <span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
-    <button class="btn sm ghost" data-action="sign-out">Sign out</button>` : '') + themeBtn();
+    <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
+  $('#userBox').innerHTML = stagePill() + who + themeBtn();
   renderNav();
 }
 
@@ -302,7 +311,7 @@ function renderNav() {
 function renderBare(html) {
   document.body.classList.add('bare');
   renderBrand();
-  $('#userBox').innerHTML = stagePill() + (S.user ? '<button class="btn sm ghost" data-action="sign-out">Sign out</button>' : '') + themeBtn();
+  $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + themeBtn();
   $view.innerHTML = html;
 }
 
@@ -363,10 +372,16 @@ function viewDashboard() {
   const pinned = S.db.notices.filter(n => n.pinned).sort((a, b) => b.date.localeCompare(a.date))[0];
   const prev = addMonths(cm, -1);
   const needsData = isAdmin() && !S.db.flats.length && !S.db.expenses.length;
+  const waiting = isAdmin() ? S.db.users.filter(u => u.role === 'pending') : [];
 
   return `
     <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div></div>
-    ${needsData ? `<a class="banner info" href="#/settings">${icon('upload')}<div><strong>No accounts yet</strong><span>Add flats under Dues → Flats & amount, or import a data file in Settings.</span></div></a>` : ''}
+    ${store.demo ? `<div class="banner info">${icon('home')}<div><strong>Demo with sample data</strong>
+      <span>Use “View as” at the top to switch between the treasurer and a resident. Try anything — changes are not saved and reset when you reload.</span></div></div>` : ''}
+    ${waiting.length ? `<a class="banner warn" href="#/settings">${icon('home')}<div>
+      <strong>${waiting.length} ${waiting.length === 1 ? 'person is' : 'people are'} waiting for approval</strong>
+      <span>${waiting.map(u => esc(u.name || u.email) + (u.requestedFlat ? ` (Flat ${esc(u.requestedFlat)})` : '')).join(', ')} · approve in Settings → Members</span></div></a>` : ''}
+    ${needsData ?`<a class="banner info" href="#/settings">${icon('upload')}<div><strong>No accounts yet</strong><span>Add flats under Dues → Flats & amount, or import a data file in Settings.</span></div></a>` : ''}
     ${pinned ? `<a class="banner notice" href="#/notices">${icon('megaphone')}<div><strong>${esc(pinned.title)}</strong><span>${esc(trunc(pinned.body, 140))}</span></div></a>` : ''}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
@@ -1260,6 +1275,7 @@ const FORMS = {
 
 const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
+  'demo-account': v => { S.ui.reportMonth = null; store.switchAccount(v); },
   async import(_, input) {
     const file = input.files[0];
     input.value = '';
