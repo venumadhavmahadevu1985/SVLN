@@ -17,9 +17,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   test:
@@ -52,6 +49,10 @@ jobs:
     needs: [test, rules]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Build and deploy one run at a time, so pushing prod and stage together can't publish an older copy last.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     steps:
       - name: Check out prod
         uses: actions/checkout@v4
@@ -84,6 +85,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages-publish
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
