@@ -65,7 +65,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 |---|---|
 | `public/info` | name, address (shown on the sign-in page) |
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[] |
-| `meta/collections` | byMonth { 'YYYY-MM': total received } |
+| `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
 | `flats/{flatNo}` | owner, sqft, override |
 | `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone (private) |
 | `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path} |

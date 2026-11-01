@@ -184,8 +184,11 @@ async function loadData() {
   S.hasSettings = !!settings;
   S.settings = { ...FALLBACK, ...(settings || {}) };
   if (!S.settings.startMonth) S.settings.startMonth = curMonth();
-  S.collections = meta.find(m => m.id === 'collections')?.byMonth || {};
+  const coll = meta.find(m => m.id === 'collections');
+  S.collections = coll?.byMonth || {};
   if (isAdmin()) {
+    // Totals saved before receipts were counted by dues month are rebuilt once.
+    if (coll && coll.basis !== COLLECTION_BASIS) S.collections = await refreshCollectionTotals();
     S.db.auditLog = (await store.list('auditLog')).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 200);
     S.db.users = await store.list('users');
   }
@@ -195,15 +198,18 @@ async function audit(action, entity, entityId, summary) {
   await store.put('auditLog', { at: new Date().toISOString(), by: S.user.uid, byName: S.user.name, action, entity, entityId, summary });
 }
 
-// Collections per month (by date received) are kept in meta/collections so residents can see
-// totals without being able to read other flats' payment records.
+// Receipts per month are kept in meta/collections so residents can see totals without being able
+// to read other flats' payment records. Like the notebook ("Receipts @ ₹1,000 × 8" for October),
+// a payment counts in the month its dues are for, whichever day it was actually received.
+const COLLECTION_BASIS = 'dues-month';
 async function refreshCollectionTotals() {
   const byMonth = {};
   for (const p of await store.list('payments')) {
-    const k = p.paidOn.slice(0, 7);
+    const k = p.month || p.paidOn.slice(0, 7);
     byMonth[k] = (byMonth[k] || 0) + Number(p.amount);
   }
-  await store.put('meta', { id: 'collections', byMonth, updatedAt: new Date().toISOString() });
+  await store.put('meta', { id: 'collections', basis: COLLECTION_BASIS, byMonth, updatedAt: new Date().toISOString() });
+  return byMonth;
 }
 
 async function save(col, doc, summary) {
@@ -810,8 +816,8 @@ function monthlyReport() {
   const spent = sum(exps, e => e.amount), closing = opening + received - spent;
   const short = m => monthLabel(m).replace(' ', " '");
 
-  // "Receipts (@ ₹1,000 × 8)" when every payment received this month was the standard amount.
-  const pays = isAdmin() ? S.db.payments.filter(p => p.paidOn.startsWith(mk)) : [];
+  // "Receipts (@ ₹1,000 × 8)" when every payment for this month's dues was the standard amount.
+  const pays = isAdmin() ? S.db.payments.filter(p => (p.month || p.paidOn.slice(0, 7)) === mk) : [];
   const uniform = pays.length && s.billing !== 'sqft' && pays.every(p => Number(p.amount) === Number(s.fixedAmount));
   const receiptsLabel = uniform ? `Receipts (@ ${money(s.fixedAmount)} × ${pays.length})` : 'Receipts (maintenance collected)';
   const paidCount = S.db.flats.filter(f => status(f, mk).key === 'paid').length;
