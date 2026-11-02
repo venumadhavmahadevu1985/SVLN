@@ -70,6 +70,26 @@ const ICONS = {
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
 
+// ----- busy buttons -----
+// While a button's work is running it shows a spinner, is disabled and announced as busy, and further
+// taps are ignored, so a slow connection can't save the same thing twice.
+const busyTarget = el => el?.closest?.('.btn, .icon-btn, .link-btn, button') || null;
+const isBusy = el => !!busyTarget(el)?.classList.contains('is-busy');
+async function withBusy(el, work) {
+  const btn = busyTarget(el);
+  if (!btn) return work();
+  const wasDisabled = btn.disabled;
+  btn.classList.add('is-busy');
+  btn.setAttribute('aria-busy', 'true');
+  if ('disabled' in btn) btn.disabled = true;
+  try { return await work(); }
+  finally {
+    btn.classList.remove('is-busy');
+    btn.removeAttribute('aria-busy');
+    if ('disabled' in btn) btn.disabled = wasDisabled;
+  }
+}
+
 function toast(msg, kind = 'ok') {
   const t = $('#toast');
   t.textContent = msg;
@@ -247,11 +267,12 @@ function openModal(title, body, { onSubmit, submitLabel = 'Save', footer = '' } 
     e.preventDefault();
     if (!onSubmit) return;
     const btn = form.querySelector('[type=submit]'), err = form.querySelector('.form-error');
-    btn.disabled = true; err.hidden = true;
+    if (isBusy(btn)) return; // a second tap or Enter while saving
+    err.hidden = true;
+    const fd = new FormData(form);
     // Close only if this form is still showing: a submit may open the next dialog (e.g. the pay slip).
-    try { await onSubmit(new FormData(form), form); if ($modal.querySelector('form') === form) closeModal(); }
+    try { await withBusy(btn, () => onSubmit(fd, form)); if ($modal.querySelector('form') === form) closeModal(); }
     catch (ex) { console.error(ex); err.textContent = ex.message || String(ex); err.hidden = false; }
-    finally { btn.disabled = false; }
   };
   if (!$modal.open) $modal.showModal();
 }
@@ -311,6 +332,7 @@ function renderBare(html) {
   document.body.classList.add('bare');
   renderBrand();
   $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + themeBtn();
+  $view.removeAttribute('aria-busy');
   $view.innerHTML = html;
 }
 
@@ -331,6 +353,7 @@ function route() {
 }
 function rerender() {
   renderNav();
+  $view.removeAttribute('aria-busy');
   $view.innerHTML = VIEWS[S.route]();
 }
 
@@ -1696,8 +1719,12 @@ function bindEvents() {
     const fn = ACTIONS[el.dataset.action];
     if (!fn) return;
     e.preventDefault();
-    try { await fn(el.dataset, el); }
-    catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
+    if (isBusy(el)) return;
+    try {
+      // Only actions that wait (they return a promise) get a spinner; instant ones never flash it.
+      const result = fn(el.dataset, el);
+      if (result && typeof result.then === 'function') await withBusy(el, () => result);
+    } catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('input', e => {
     const key = e.target.dataset?.filter;
@@ -1708,7 +1735,9 @@ function bindEvents() {
   document.addEventListener('change', async e => {
     const t = e.target;
     if (!t.dataset.change) return;
-    try { await CHANGES[t.dataset.change](t.value, t); }
+    // A hidden file input lives inside a label styled as a button (Import data file): spin that.
+    const shown = t.type === 'file' ? t.closest('.btn') : null;
+    try { await withBusy(shown, () => CHANGES[t.dataset.change](t.value, t)); }
     catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('submit', async e => {
@@ -1717,12 +1746,11 @@ function bindEvents() {
     e.preventDefault();
     // Read the form (including which button was pressed) before disabling that button:
     // disabled buttons are left out of FormData.
+    const btn = e.submitter || form.querySelector('[type=submit], button:not([type])');
+    if (isBusy(btn)) return;
     const fd = new FormData(form, e.submitter);
-    const btn = e.submitter;
-    if (btn) btn.disabled = true;
-    try { await FORMS[form.dataset.form](fd, form); }
+    try { await withBusy(btn, () => FORMS[form.dataset.form](fd, form)); }
     catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
-    finally { if (btn) btn.disabled = false; }
   });
   $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
   window.addEventListener('hashchange', route);
