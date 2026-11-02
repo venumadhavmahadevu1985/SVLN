@@ -346,21 +346,27 @@ body.bare .site-credit { padding-bottom: 20px; }
 .banner.install img { border-radius: 11px; flex: none; box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
 .banner.install .row-btns { margin-top: 8px; }
 .brand img { border-radius: 9px; }
-/* busy buttons: a spinner replaces the icon (or sits before the label) while the action runs */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner, .is-busy::before {
-  content: ""; display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 50%;
-  border: 2.5px solid color-mix(in srgb, currentColor 28%, transparent); border-top-color: currentColor;
-  animation: spin .7s linear infinite;
+/* Loading symbol: the letters S V L N light up one after another, like a wave.
+   Large in the building's colours while the app opens; small in the button's colour while it works. */
+@keyframes svln-wave {
+  0%, 70%, 100% { opacity: .28; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-3px); }
 }
+.svln-loader { display: inline-flex; align-items: center; gap: 2px; flex: none; font-weight: 800; line-height: 1; letter-spacing: .02em; }
+.svln-loader i { font-style: normal; display: inline-block; animation: svln-wave 1.1s ease-in-out infinite; }
+.svln-loader i:nth-child(2) { animation-delay: .15s; }
+.svln-loader i:nth-child(3) { animation-delay: .3s; }
+.svln-loader i:nth-child(4) { animation-delay: .45s; }
+@media (prefers-reduced-motion: reduce) { .svln-loader i { animation-duration: 2.4s; } }
 .is-busy { cursor: progress !important; pointer-events: none; }
 .btn.is-busy, .icon-btn.is-busy, .link-btn.is-busy { opacity: 1 !important; }
 .is-busy .ic { display: none; }
-.icon-btn.is-busy::before { width: 18px; height: 18px; }
+.is-busy .svln-loader { font-size: 12px; }
 .link-btn.is-busy { display: inline-flex; align-items: center; gap: 8px; }
-@media (prefers-reduced-motion: reduce) { .spinner, .is-busy::before { animation-duration: 1.6s; } }
-.page-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 16px; color: var(--muted); }
-.page-loading .spinner { width: 24px; height: 24px; border-width: 3px; color: var(--brand); }
+.page-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 64px 16px; color: var(--muted); }
+.page-loading .svln-loader { font-size: 40px; gap: 12px; letter-spacing: .1em; }
+.page-loading .svln-loader i:nth-child(odd) { color: var(--brand); }
+.page-loading .svln-loader i:nth-child(even) { color: var(--accent); }
 
 /* flat logins */
 .logins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
