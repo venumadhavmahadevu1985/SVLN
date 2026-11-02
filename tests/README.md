@@ -20,7 +20,7 @@ npm test
 npm run test:rules
 ```
 
-`npm test` runs the unit, desktop and phone projects (138 tests, about 30 s). `npm run test:rules` starts the
+`npm test` runs the unit, desktop and phone projects (166 tests, about 40 s). `npm run test:rules` starts the
 Firestore emulator, so it needs Java. GitHub Actions runs both on every push and pull request, and
 **the site is only published when every test passes** (`.github/workflows/pages.yml`).
 
@@ -48,6 +48,7 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
 | SVLN app (PWA) | `e2e/pwa.spec.ts` | manifest name and icon sizes, iPhone home-screen tags, Android install prompt, Not now remembered, iPhone instructions, hidden when already installed |
 | Notices and vendors | `e2e/notices-vendors.spec.ts` | post (pinned by default), unpinned, max 3 on Home, edit and delete, AMC renewing, expired and far-off, edit and delete vendor, resident restrictions |
 | Members, settings, data | `e2e/settings-members.spec.ts` | approve, make admin, move back to pending, rename, opening balance, categories and payment modes, FY start, required fields, backup JSON, import, re-import is idempotent, invalid or broken files |
+| Flat profile completeness | `unit/util.spec.ts`, `e2e/profile.spec.ts` | scoring rules (owner, tenant, vacant, invalid mobile, No vehicles, emergency contact), resident nudge and checklist, Complete now focuses the first missing field, live % in the form, reaching 100%, admin N-of-8 card, Profile column, incomplete-only filter, Remind and Copy reminders text, residents can't see other flats |
 | Resident journey | `e2e/resident.spec.ts` | menu, blocked admin pages, own dues, update flat details (seen by admin), validation, role switch |
 | Edge cases | `e2e/edge-cases.spec.ts` | XSS in every text field, ₹1 crore amounts, negative balance, overpayment, ₹0 payment refused, demo reset, theme persists, deep links, dialog cancel and backdrop, no console errors |
 | Phone layout | `e2e/layout.mobile.spec.ts` | no sideways scroll on any page, grid scrolls in place, bottom bar and More, dialogs fit, resident bar |

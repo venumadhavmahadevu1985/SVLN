@@ -31,6 +31,11 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
 - **Dues:** a flats × months grid of who has paid, a pending list with Copy and WhatsApp reminders, and maintenance amount settings.
 - **My flat (residents):** dues history, plus the flat's own details, which are private to that flat and the admin.
+  Each owner fills in their own details in a 4-step form with a live "% complete".
+- **Profile completeness:** each flat gets a score calculated from its details (never stored).
+  - **Residents** see a progress bar, what's still needed, and **Complete now** on Home and My flat.
+  - **The treasurer** sees "Flat details: N of 8 complete" on Home, a **Profile** column and a **Show incomplete only** filter in Dues → Flats & amount, and **Remind** / **Copy reminders** for WhatsApp messages listing what each flat is missing.
+  - **Required:** owner name, who lives here, mobile, family members, vehicles (or "No vehicles", saved as `None`, so no new field and no rules change), and an emergency contact. Rented flats also need the tenant name; vacant flats need only owner name and mobile.
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
@@ -88,19 +93,26 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 1. Every change goes to **`stage` first**. Push it, let CI pass, and check https://venumadhavmahadevu1985.github.io/SVLN/stage/.
 2. **Nothing is merged or pushed to `prod` until the owner explicitly says "deploy to PROD".**
    Pushing to `prod` is what changes the live site that residents use.
-3. After approval, fast-forward `prod` to the tested `stage` commit (no direct commits on `prod`) and confirm
-   `https://venumadhavmahadevu1985.github.io/SVLN/version.txt` shows the new commit for prod. GitHub Pages caches
-   for up to 10 minutes.
+3. After approval, merge the tested `stage` into `prod` with a **release merge commit** (`--no-ff`), push, and confirm
+   `https://venumadhavmahadevu1985.github.io/SVLN/version.txt` shows the new prod commit. GitHub Pages caches for up to 10 minutes.
+
+**Why a merge commit and not a fast-forward:** GitHub Pages ignores a deployment for a commit it has already
+deployed. The stage push already deployed the stage commit, with the *old* prod inside it. If `prod` is fast-forwarded to
+that same commit, prod's deployment is skipped and the live site keeps the old version. The release commit gives
+prod a new commit, so its deployment always goes live.
 
 To make it live (only after approval):
 ```bash
 git switch prod
 ```
 ```bash
-git merge --ff-only stage
+git merge --no-ff stage -m "Release to prod"
 ```
 ```bash
 git push origin prod
+```
+```bash
+git switch stage
 ```
 Every push to either branch runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which publishes both sites.
 

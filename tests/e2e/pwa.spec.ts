@@ -1,6 +1,9 @@
 import { test, expect } from '../fixtures';
 
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+const IPHONE_CHROME_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1';
+const ANDROID_CHROME_UA = 'Mozilla/5.0 (Linux; Android 14; SM-A146B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+const ANDROID_WEBVIEW_UA = 'Mozilla/5.0 (Linux; Android 14; SM-A146B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36';
 
 // Chrome fires `beforeinstallprompt` when the site is installable; tests fire a stand-in.
 async function offerInstall(page: import('@playwright/test').Page, outcome: 'accepted' | 'dismissed' = 'accepted') {
@@ -70,6 +73,61 @@ test.describe('Installable SVLN app', () => {
     await app.go('expenses');
     await app.go('dashboard');
     await expect(app.main.locator('.banner.install')).toBeVisible();
+  });
+});
+
+test.describe('Android Chrome before it offers one-tap install', () => {
+  test.use({ userAgent: ANDROID_CHROME_UA });
+
+  test('shows the ⋮ menu steps straight away (Chrome only offers Install after a tap and ~30 s)', async ({ app }) => {
+    await app.open();
+    const banner = app.main.locator('.banner.install');
+    await expect(banner).toContainText('Install the SVLN app');
+    await expect(banner).toContainText('“Install app” or “Add to Home screen”');
+    await expect(banner).toContainText('Open in Chrome');
+    await expect(banner.getByRole('button', { name: 'Install' })).toHaveCount(0);
+  });
+
+  test('adds the one-tap Install button once Chrome offers it', async ({ app, page }) => {
+    await app.open();
+    await offerInstall(page);
+    await expect(app.main.locator('.banner.install').getByRole('button', { name: 'Install' })).toBeVisible();
+  });
+
+  test('after "Not now", More still has "Install SVLN app"', async ({ app, page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await app.open();
+    await app.main.locator('.banner.install').getByRole('button', { name: 'Not now' }).click();
+    await expect(app.main.locator('.banner.install')).toHaveCount(0);
+    await page.locator('#bottomNav').getByRole('button', { name: 'More' }).click();
+    await app.modal.getByRole('button', { name: 'Install SVLN app' }).click();
+    await expect(app.modal.locator('.modal-card > header h2')).toHaveText('Install the SVLN app');
+    await expect(app.modal.locator('.install-help')).toContainText('“Install app” or “Add to Home screen”');
+  });
+});
+
+test.describe('Android app browsers (WhatsApp, Facebook…)', () => {
+  test.use({ userAgent: ANDROID_WEBVIEW_UA });
+
+  test('says to open the page in Chrome first', async ({ app }) => {
+    await app.open();
+    await expect(app.main.locator('.banner.install')).toContainText('Open this page in Chrome first');
+  });
+});
+
+test.describe('Chrome on iPhone', () => {
+  test.use({ userAgent: IPHONE_CHROME_UA });
+
+  test('says to open the page in Safari first', async ({ app }) => {
+    await app.open();
+    await expect(app.main.locator('.banner.install')).toContainText('Open this page in Safari first');
+  });
+});
+
+test.describe('Computers', () => {
+  test('no install card (the browser shows its own install icon)', async ({ app }) => {
+    await app.open();
+    await expect(app.main.locator('.banner.install')).toHaveCount(0);
   });
 });
 

@@ -62,6 +62,36 @@ export function waNumber(phone) {
   return d.length === 10 ? '91' + d : d.length >= 11 ? d : '';
 }
 
+// "No vehicles" is stored as this vehicles text, so no new Firestore field (and no rules change) is needed.
+export const NO_VEHICLES = 'None';
+
+// How complete a flat's details are. Computed from the data every time (never stored).
+// Each required item counts equally; `field` is the form input to jump to when it is missing.
+// Vacant flats only need the owner name and a mobile number; tenant name only counts for rented flats.
+export function profileCompleteness(flat, profile) {
+  const p = profile || {}, f = flat || {};
+  const has = v => String(v ?? '').trim() !== '';
+  const items = [
+    { key: 'owner', label: 'Owner name', field: 'owner', ok: has(f.owner) },
+    { key: 'occupancy', label: 'Who lives here (owner / tenant / vacant)', field: 'occupancy', ok: has(p.occupancy) },
+    { key: 'mobile', label: 'Mobile number', field: 'phone', ok: waNumber(p.phone) !== '' },
+  ];
+  if (p.occupancy === 'Tenant') items.push({ key: 'tenant', label: 'Tenant name', field: 'residentName', ok: has(p.residentName) });
+  if (p.occupancy !== 'Vacant') {
+    items.push(
+      { key: 'members', label: 'Family members', field: 'members', ok: Number(p.members) > 0 },
+      { key: 'vehicles', label: 'Vehicles (or “No vehicles”)', field: 'vehicles', ok: has(p.vehicles) },
+      { key: 'emergency', label: 'Emergency contact', field: has(p.emergencyName) ? 'emergencyPhone' : 'emergencyName',
+        ok: has(p.emergencyName) && waNumber(p.emergencyPhone) !== '' },
+    );
+  } else {
+    items.splice(items.findIndex(i => i.key === 'occupancy'), 1); // a vacant flat has already said who lives there
+  }
+  const strip = ({ ok, ...rest }) => rest;
+  const done = items.filter(i => i.ok).map(strip), missing = items.filter(i => !i.ok).map(strip);
+  return { percent: Math.round((done.length / items.length) * 100), done, missing };
+}
+
 // Firebase errors arrive as "Firebase: Error (auth/…)"; show residents something they can act on.
 export const AUTH_MESSAGES = {
   'auth/email-already-in-use': 'An account with this email already exists. Use Sign in instead.',

@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
-  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError,
+  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
 } from './util.js';
 
 // Technical fallbacks for settings fields that may be missing (not society data).
@@ -387,8 +387,8 @@ function viewDashboard() {
       <span>${esc(trunc(n.body, 160))}</span><small class="banner-date">${dateLabel(n.date)}</small></div></a>`).join('')}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
-    ${!isAdmin() && flatById(S.user.flatId) && !S.db.flatProfiles[S.user.flatId] ? `<a class="banner info" href="#/dues">${icon('home')}<div>
-      <strong>Add your flat's details</strong><span>Owner name, phone number and family details help the treasurer reach you.</span></div></a>` : ''}
+    ${!isAdmin() ? myProfileNudge() : ''}
+    ${isAdmin() ? profileSummaryCard() : ''}
     <section class="kpis">
       ${kpi('Balance in hand', money(balanceThrough(cm)), `Brought forward ${money(balanceThrough(prev))}`, 'hero')}
       ${kpi(`Collected · ${monthLabel(cm)}`, money(coll[cm] || 0), `${monthLabel(prev)}: ${money(coll[prev] || 0)}`)}
@@ -649,18 +649,31 @@ function duesFlats() {
     ${noArea.length ? `<div class="banner warn">${icon('wallet')}<div><strong>${noArea.length} flat${noArea.length === 1 ? ' has' : 's have'} no area set</strong>
       <span>With billing by area, ${noArea.map(f => esc(f.id)).join(', ')} would owe ₹0. Add the area under Billing for each flat.</span></div></div>` : ''}
     <div class="card">
-      <div class="card-head"><h2>Flats (${S.db.flats.length})</h2><button class="btn sm ghost" data-action="add-flat">${icon('plus')}<span>Add flat</span></button></div>
-      ${S.db.flats.length ? `<div class="table-scroll"><table class="data">
-        <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
-        <tbody>${S.db.flats.map(f => { const p = S.db.flatProfiles[f.id]; return `<tr>
-          <td><strong>${esc(f.id)}</strong></td>
-          <td>${esc(f.owner) || '<span class="muted">Not set</span>'}${p?.occupancy === 'Tenant' && p.residentName ? `<br><small class="muted">Tenant: ${esc(p.residentName)}</small>` : p?.occupancy === 'Vacant' ? '<br><small class="muted">Vacant</small>' : ''}</td>
-          <td>${p?.phone ? `<a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>` : '<span class="muted">—</span>'}</td>
-          <td class="num">${f.sqft || '—'}</td><td class="num">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
-          <td class="num"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
-            <button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Billing</button></div></td></tr>`; }).join('')}</tbody>
-      </table></div>` : empty('No flats yet. Add each flat number.')}
+      <div class="card-head"><h2>Flats (${S.db.flats.length})</h2>
+        <div class="row-btns">
+          <button type="button" class="btn sm ghost${S.ui.incompleteOnly ? ' active' : ''}" aria-pressed="${!!S.ui.incompleteOnly}" data-action="toggle-incomplete">Show incomplete only</button>
+          <button class="btn sm ghost" data-action="add-flat">${icon('plus')}<span>Add flat</span></button></div></div>
+      ${flatsTable()}
     </div>`;
+}
+
+function flatsTable() {
+  if (!S.db.flats.length) return empty('No flats yet. Add each flat number.');
+  const rows = S.db.flats.map(f => ({ f, p: S.db.flatProfiles[f.id], c: completenessOf(f) }))
+    .filter(r => !S.ui.incompleteOnly || r.c.missing.length);
+  if (!rows.length) return empty('Every flat has complete details.');
+  return `<div class="table-scroll"><table class="data">
+    <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th>Profile</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
+    <tbody>${rows.map(({ f, p, c }) => `<tr data-flat-row="${esc(f.id)}">
+      <td><strong>${esc(f.id)}</strong></td>
+      <td>${esc(f.owner) || '<span class="muted">Not set</span>'}${p?.occupancy === 'Tenant' && p.residentName ? `<br><small class="muted">Tenant: ${esc(p.residentName)}</small>` : p?.occupancy === 'Vacant' ? '<br><small class="muted">Vacant</small>' : ''}</td>
+      <td>${p?.phone ? `<a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>` : '<span class="muted">—</span>'}</td>
+      <td title="${c.missing.length ? 'Missing: ' + esc(c.missing.map(m => m.label).join(', ')) : 'Complete'}">${completenessBar(c, true)}</td>
+      <td class="num">${f.sqft || '—'}</td><td class="num">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
+      <td class="num"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
+        <button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Billing</button>
+        ${c.missing.length ? `<button class="btn sm ghost" data-action="remind-profile" data-id="${esc(f.id)}">${icon('copy')}<span>Remind</span></button>` : ''}</div></td></tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function duesResident() {
@@ -739,6 +752,60 @@ function flatModal(f) {
 // ---------- flat details (each flat keeps its own; private to that flat and admins) ----------
 const PROFILE_FIELDS = ['occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles', 'emergencyName', 'emergencyPhone'];
 
+// ----- profile completeness (computed from the data, never stored) -----
+const completenessOf = f => profileCompleteness(f, S.db.flatProfiles[f.id]);
+const siteLink = () => location.origin + location.pathname.replace(/index\.html$/, '');
+
+function completenessBar(c, small = false) {
+  return `<div class="pc${small ? ' pc-sm' : ''}" role="img" aria-label="Flat details ${c.percent}% complete">
+    <div class="pc-track"><i class="${c.percent === 100 ? 'full' : ''}" style="width:${c.percent}%"></i></div><span class="pc-num">${c.percent}%</span></div>`;
+}
+
+function completenessBlock(f) {
+  const c = completenessOf(f);
+  if (!c.missing.length) return `<div class="pc-block done">${completenessBar(c)}<p class="hint">✓ All flat details are complete. Thank you!</p></div>`;
+  return `<div class="pc-block">${completenessBar(c)}
+    <p class="pc-title">Still needed:</p>
+    <ul class="pc-missing">${c.missing.map(m => `<li>${esc(m.label)}</li>`).join('')}</ul>
+    <button type="button" class="btn sm primary" data-action="complete-profile" data-id="${esc(f.id)}" data-field="${esc(c.missing[0].field)}">Complete now</button></div>`;
+}
+
+// Resident Home: shown until their own flat's details are 100% complete.
+function myProfileNudge() {
+  const f = flatById(S.user.flatId);
+  if (!f) return '';
+  const c = completenessOf(f);
+  if (!c.missing.length) return '';
+  return `<div class="banner info pc-nudge">${icon('home')}<div>
+    <strong>Your flat details are ${c.percent}% complete</strong>
+    <span>Still needed: ${c.missing.map(m => esc(m.label)).join(', ')}.</span>
+    ${completenessBar(c, true)}
+    <div class="row-btns"><button type="button" class="btn sm primary" data-action="complete-profile" data-id="${esc(f.id)}" data-field="${esc(c.missing[0].field)}">Complete now</button></div></div></div>`;
+}
+
+// Admin Home: how many flats have complete details, and which ones don't.
+function profileSummaryCard() {
+  if (!S.db.flats.length) return '';
+  const rows = S.db.flats.map(f => ({ f, c: completenessOf(f) }));
+  const incomplete = rows.filter(r => r.c.missing.length).sort((a, b) => a.c.percent - b.c.percent);
+  const doneCount = rows.length - incomplete.length;
+  return `<section class="card pc-summary">
+    <div class="card-head"><h2>Flat details: ${doneCount} of ${rows.length} complete</h2>
+      ${incomplete.length ? `<button type="button" class="btn sm ghost" data-action="copy-profile-reminders">${icon('copy')}<span>Copy reminders</span></button>` : ''}</div>
+    ${completenessBar({ percent: Math.round(sum(rows, r => r.c.percent) / rows.length) })}
+    ${incomplete.length ? `<ul class="pc-list">${incomplete.map(({ f, c }) => `<li><strong>Flat ${esc(f.id)}</strong>${f.owner ? ` · ${esc(f.owner)}` : ''}
+      <span class="muted" title="${esc(c.missing.map(m => m.label).join(', '))}">${c.missing.length} detail${c.missing.length === 1 ? '' : 's'} missing</span>${completenessBar(c, true)}</li>`).join('')}</ul>
+      <button type="button" class="link-btn" data-action="open-flats">See all flats</button>`
+      : '<p class="hint">✓ Every flat has complete details.</p>'}
+  </section>`;
+}
+
+function profileReminder(f) {
+  const c = completenessOf(f);
+  const who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, please complete your flat details in the SVLN app: ${c.missing.map(m => m.label).join(', ')}. ${siteLink()}`;
+}
+
 function flatDetailsCard(f) {
   const p = S.db.flatProfiles[f.id];
   const item = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
@@ -746,6 +813,7 @@ function flatDetailsCard(f) {
   return `<div class="card">
     <div class="card-head"><h2>Flat details</h2>
       <button class="btn sm ${p ? 'ghost' : 'primary'}" data-action="edit-profile" data-id="${esc(f.id)}">${p ? 'Edit details' : 'Add details'}</button></div>
+    ${completenessBlock(f)}
     ${p ? `<dl class="details">
         ${item('Owner', esc(f.owner))}${item('Living here', esc(p.occupancy))}${item('Tenant', esc(p.residentName))}
         ${item('Mobile', tel(p.phone))}${item('Other phone', tel(p.altPhone))}${item('Email', esc(p.email))}
@@ -757,20 +825,28 @@ function flatDetailsCard(f) {
   </div>`;
 }
 
-function profileModal(flatId) {
+// focusField: a form input name (from profileCompleteness) to scroll to and highlight, for "Complete now".
+function profileModal(flatId, focusField) {
   const f = flatById(flatId), p = S.db.flatProfiles[flatId] || {};
-  const occ = ['Owner', 'Tenant', 'Vacant'];
+  const occ = ['Owner', 'Tenant', 'Vacant'], noVehicles = p.vehicles === NO_VEHICLES;
+  const step = (n, title) => `<h3 class="form-step span2"><span>${n}</span>${title}</h3>`;
   openModal(`Flat ${flatId} details`, `
     <p class="muted">Your name is shown to other residents. Phone numbers and other details are visible only to this flat and the treasurer.</p>
+    <div data-pc></div>
     <div class="form-grid">
+      ${step(1, 'Owner and who lives here')}
       <label class="field span2"><span>Owner name</span><input name="owner" required maxlength="60" autocomplete="name" value="${esc(f.owner)}"></label>
       <label class="field"><span>Living here</span><select name="occupancy">${occ.map(o => `<option${o === (p.occupancy || 'Owner') ? ' selected' : ''}>${o}</option>`).join('')}</select></label>
       <label class="field"><span>Tenant name (if rented)</span><input name="residentName" maxlength="60" value="${esc(p.residentName || '')}"></label>
+      ${step(2, 'Contact')}
       <label class="field"><span>Mobile (WhatsApp)</span><input type="tel" name="phone" maxlength="20" inputmode="tel" autocomplete="tel" value="${esc(p.phone || '')}" placeholder="10-digit mobile number"></label>
       <label class="field"><span>Other phone</span><input type="tel" name="altPhone" maxlength="20" inputmode="tel" value="${esc(p.altPhone || '')}"></label>
-      <label class="field"><span>Email</span><input type="email" name="email" maxlength="80" autocomplete="email" value="${esc(p.email || '')}"></label>
+      <label class="field span2"><span>Email</span><input type="email" name="email" maxlength="80" autocomplete="email" value="${esc(p.email || '')}"></label>
+      ${step(3, 'Family and vehicles')}
       <label class="field"><span>Family members</span><input type="number" name="members" min="0" max="20" value="${esc(p.members || '')}"></label>
-      <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(p.vehicles || '')}" placeholder="Registration numbers, e.g. car and bike"></label>
+      <label class="field check"><input type="checkbox" name="noVehicles"${noVehicles ? ' checked' : ''}><span>No vehicles</span></label>
+      <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(noVehicles ? '' : p.vehicles || '')}" placeholder="Registration numbers, e.g. car and bike"${noVehicles ? ' disabled' : ''}></label>
+      ${step(4, 'Emergency contact')}
       <label class="field"><span>Emergency contact name</span><input name="emergencyName" maxlength="60" value="${esc(p.emergencyName || '')}"></label>
       <label class="field"><span>Emergency contact phone</span><input type="tel" name="emergencyPhone" maxlength="20" inputmode="tel" value="${esc(p.emergencyPhone || '')}"></label>
     </div>`, {
@@ -779,11 +855,31 @@ function profileModal(flatId) {
       if (owner !== (f.owner || '')) await save('flats', { ...f, owner }, `Flat ${flatId} owner name`);
       const doc = { ...p, id: flatId };
       for (const k of PROFILE_FIELDS) doc[k] = String(fd.get(k) || '').trim();
+      if (fd.get('noVehicles')) doc.vehicles = NO_VEHICLES;
       doc.members = Number(doc.members) || 0;
       await save('flatProfiles', doc, `Flat ${flatId} details`);
       await refresh('Details saved');
     },
   });
+
+  // Live "% complete" while typing, and the "No vehicles" tick switching the vehicles box off.
+  const form = $modal.querySelector('form'), out = form.querySelector('[data-pc]'), el = form.elements;
+  const update = () => {
+    el.vehicles.disabled = el.noVehicles.checked;
+    out.innerHTML = completenessBar(profileCompleteness({ owner: el.owner.value }, {
+      occupancy: el.occupancy.value, residentName: el.residentName.value, phone: el.phone.value, members: el.members.value,
+      vehicles: el.noVehicles.checked ? NO_VEHICLES : el.vehicles.value, emergencyName: el.emergencyName.value, emergencyPhone: el.emergencyPhone.value,
+    }));
+  };
+  form.addEventListener('input', update);
+  form.addEventListener('change', update);
+  update();
+  const target = focusField && el[focusField];
+  if (target) {
+    target.closest('.field')?.classList.add('pc-focus');
+    target.scrollIntoView({ block: 'center' });
+    target.focus();
+  }
 }
 
 // ---------- staff and pay slips ----------
@@ -1295,26 +1391,42 @@ function renderNotConfigured() {
 }
 
 // ---------- install as a phone app ----------
-// Android/Chrome offer installation through `beforeinstallprompt`; iPhone Safari has no prompt, so iPhone
-// users get the "Share → Add to Home Screen" steps instead. Hidden once installed or dismissed.
+// Chrome only offers one-tap install (`beforeinstallprompt`) after the visitor has tapped the page and stayed
+// a little while, apps' built-in browsers (WhatsApp, Facebook…) can't install at all, and on iPhone only
+// Safari can add to the home screen. So phones always get the steps that work for their browser, and the
+// one-tap Install button is added whenever Chrome offers it.
 let installEvent = null;
+const UA = () => navigator.userAgent;
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const isIPhone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isIPhone = () => /iphone|ipad|ipod/i.test(UA());
+const isAndroid = () => /android/i.test(UA());
+const isInAppBrowser = () => /\bwv\b|FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat/i.test(UA());
+const isIPhoneOtherBrowser = () => isIPhone() && /CriOS|FxiOS|EdgiOS|OPiOS/i.test(UA());
+
+// What this visitor should do to install, or null on computers where the browser shows its own install icon.
+function installHelp() {
+  if (installEvent) return { title: 'Install the SVLN app', text: 'Open it from your home screen, like any other app.', oneTap: true };
+  if (isIPhone()) {
+    return isInAppBrowser() || isIPhoneOtherBrowser()
+      ? { title: 'Add SVLN to your home screen', text: 'Open this page in Safari first (tap ⋯ or the compass icon → “Open in Safari”). Then tap Share ⎙ → “Add to Home Screen”.' }
+      : { title: 'Add SVLN to your home screen', text: 'Tap the Share button ⎙ at the bottom, then “Add to Home Screen” → “Add”.' };
+  }
+  if (isAndroid()) {
+    return isInAppBrowser()
+      ? { title: 'Install the SVLN app', text: 'Open this page in Chrome first: tap ⋮ (top right) → “Open in Chrome”. Then tap ⋮ → “Install app” or “Add to Home screen”.' }
+      : { title: 'Install the SVLN app', text: 'Tap the browser menu ⋮ (top right) → “Install app” or “Add to Home screen”. Opened from WhatsApp? First tap ⋮ → “Open in Chrome”.' };
+  }
+  return null;
+}
 
 function installBanner() {
   if (isInstalled() || lsGet('svln-install-dismissed')) return '';
-  const later = '<button type="button" class="btn ghost sm" data-action="dismiss-install">Not now</button>';
-  if (installEvent) {
-    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
-      <strong>Install the SVLN app</strong><span>Open it from your home screen, like any other app.</span>
-      <div class="row-btns"><button type="button" class="btn primary sm" data-action="install-app">Install</button>${later}</div></div></div>`;
-  }
-  if (isIPhone()) {
-    return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
-      <strong>Add SVLN to your home screen</strong><span>In Safari, tap the Share button <b aria-hidden="true">⎙</b>, then “Add to Home Screen”.</span>
-      <div class="row-btns">${later}</div></div></div>`;
-  }
-  return '';
+  const h = installHelp();
+  if (!h) return '';
+  return `<div class="banner install"><img src="icons/icon-192.png" alt="" width="44" height="44"><div>
+    <strong>${h.title}</strong><span>${h.text}</span>
+    <div class="row-btns">${h.oneTap ? '<button type="button" class="btn primary sm" data-action="install-app">Install</button>' : ''}
+      <button type="button" class="btn ghost sm" data-action="dismiss-install">Not now</button></div></div></div>`;
 }
 
 // Re-draw whichever screen is showing so the install banner appears or disappears.
@@ -1392,6 +1504,7 @@ const ACTIONS = {
   async 'install-app'() {
     const e = installEvent;
     installEvent = null;
+    closeModal();
     if (!e) return;
     await e.prompt();
     const choice = await e.userChoice;
@@ -1406,8 +1519,18 @@ const ACTIONS = {
     lsSet('svln-theme', root.dataset.theme);
   },
   more() {
+    const h = !isInstalled() && installHelp();
     openModal('More', `<nav class="sheet">${navItems().slice(4).map(([id, label, ic]) =>
-      `<a href="#/${id}" data-action="nav" class="${S.route === id ? 'active' : ''}">${icon(ic)}<span>${label}</span></a>`).join('')}</nav>`);
+      `<a href="#/${id}" data-action="nav" class="${S.route === id ? 'active' : ''}">${icon(ic)}<span>${label}</span></a>`).join('')}
+      ${h ? `<button type="button" class="sheet-install" data-action="install-help"><img src="icons/icon-192.png" alt="" width="24" height="24"><span>Install SVLN app</span></button>` : ''}</nav>`);
+  },
+  // Always reachable (even after "Not now") from More.
+  'install-help'() {
+    const h = installHelp();
+    if (!h) return;
+    openModal(h.title, `<div class="install-help"><img src="icons/icon-192.png" alt="" width="72" height="72"><p>${h.text}</p></div>`, {
+      footer: h.oneTap ? '<button type="button" class="btn primary" data-action="install-app">Install</button>' : '',
+    });
   },
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },
@@ -1444,6 +1567,12 @@ const ACTIONS = {
   'copy-all-reminders': () => copyText(S.db.flats.map(f => ({ f, o: outstanding(f) })).filter(r => r.o.total > 0)
     .map(r => reminderText(r.f, r.o)).join('\n\n')),
   'edit-profile': ds => profileModal(ds.id),
+  'complete-profile': ds => profileModal(ds.id, ds.field),
+  'toggle-incomplete': () => { S.ui.incompleteOnly = !S.ui.incompleteOnly; rerender(); },
+  'open-flats': () => { S.ui.duesTab = 'flats'; S.ui.incompleteOnly = true; location.hash = '#/dues'; },
+  'remind-profile': ds => copyText(profileReminder(flatById(ds.id)), 'Reminder copied — paste it in WhatsApp'),
+  'copy-profile-reminders': () => copyText(S.db.flats.filter(f => completenessOf(f).missing.length).map(profileReminder).join('\n\n'),
+    'Reminders copied — paste them in WhatsApp'),
   'add-flat': () => flatModal(),
   'edit-flat': ds => flatModal(flatById(ds.id)),
   async 'delete-flat'(ds) {
