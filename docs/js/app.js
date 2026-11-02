@@ -680,20 +680,38 @@ function duesFlats() {
     </div>`;
 }
 
+// Who signs in for a flat (admins only: member accounts are private to admins by the rules).
+function flatLogins(flatId) {
+  const users = S.db.users || [];
+  return {
+    active: users.filter(u => u.flatId === flatId && ['resident', 'admin'].includes(u.role)),
+    waiting: users.filter(u => u.role === 'pending' && u.requestedFlat === flatId),
+  };
+}
+function loginsHtml(flatId) {
+  const { active, waiting } = flatLogins(flatId);
+  if (!active.length && !waiting.length) return '<span class="muted">No one has signed in yet</span>';
+  const li = (u, badge) => `<li><strong>${esc(u.name || u.email || '')}</strong>${badge}${u.email ? `<small>${esc(u.email)}</small>` : ''}</li>`;
+  return `<ul class="logins">${active.map(u => li(u, u.role === 'admin' ? ' <span class="badge ok">admin</span>' : '')).join('')}${
+    waiting.map(u => li(u, ' <span class="badge warn">waiting for approval</span>')).join('')}</ul>`;
+}
+
 function flatsTable() {
   if (!S.db.flats.length) return empty('No flats yet. Add each flat number.');
   const rows = S.db.flats.map(f => ({ f, p: S.db.flatProfiles[f.id], c: completenessOf(f) }))
     .filter(r => !S.ui.incompleteOnly || r.c.missing.length);
   if (!rows.length) return empty('Every flat has complete details.');
-  return `<div class="table-scroll"><table class="data">
-    <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th>Profile</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
+  // On phones each row becomes a contact card (see table.stack in styles.css).
+  return `<div class="table-scroll"><table class="data stack flats-table">
+    <thead><tr><th>Flat</th><th>Owner / resident</th><th>Contact</th><th>Logins</th><th>Profile</th><th class="num">Area (sq. ft.)</th><th class="num">Monthly</th><th></th></tr></thead>
     <tbody>${rows.map(({ f, p, c }) => `<tr data-flat-row="${esc(f.id)}">
-      <td><strong>${esc(f.id)}</strong></td>
-      <td>${esc(f.owner) || '<span class="muted">Not set</span>'}${p?.occupancy === 'Tenant' && p.residentName ? `<br><small class="muted">Tenant: ${esc(p.residentName)}</small>` : p?.occupancy === 'Vacant' ? '<br><small class="muted">Vacant</small>' : ''}</td>
-      <td>${p?.phone ? `<a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>` : '<span class="muted">—</span>'}</td>
-      <td title="${c.missing.length ? 'Missing: ' + esc(c.missing.map(m => m.label).join(', ')) : 'Complete'}">${completenessBar(c, true)}</td>
-      <td class="num">${f.sqft || '—'}</td><td class="num">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
-      <td class="num"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
+      <td class="stack-title"><strong>${esc(f.id)}</strong></td>
+      <td class="stack-full" data-label="Owner / resident">${esc(f.owner) || '<span class="muted">Not set</span>'}${p?.occupancy === 'Tenant' && p.residentName ? `<br><small class="muted">Tenant: ${esc(p.residentName)}</small>` : p?.occupancy === 'Vacant' ? '<br><small class="muted">Vacant</small>' : ''}</td>
+      <td data-label="Mobile">${p?.phone ? `<a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>` : '<span class="muted">—</span>'}</td>
+      <td class="stack-full" data-label="Logins">${loginsHtml(f.id)}</td>
+      <td class="stack-full" data-label="Profile" title="${c.missing.length ? 'Missing: ' + esc(c.missing.map(m => m.label).join(', ')) : 'Complete'}">${completenessBar(c, true)}</td>
+      <td class="num" data-label="Area (sq. ft.)">${f.sqft || '—'}</td><td class="num" data-label="Monthly">${money(dueAmount(f))}${Number(f.override) > 0 ? ' <small class="muted">custom</small>' : ''}</td>
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-profile" data-id="${esc(f.id)}">Details</button>
         <button class="btn sm ghost" data-action="edit-flat" data-id="${esc(f.id)}">Billing</button>
         ${c.missing.length ? `<button class="btn sm ghost" data-action="remind-profile" data-id="${esc(f.id)}">${icon('copy')}<span>Remind</span></button>` : ''}</div></td></tr>`).join('')}</tbody>
   </table></div>`;
@@ -837,6 +855,8 @@ function flatDetailsCard(f) {
     <div class="card-head"><h2>Flat details</h2>
       <button class="btn sm ${p ? 'ghost' : 'primary'}" data-action="edit-profile" data-id="${esc(f.id)}">${p ? 'Edit details' : 'Add details'}</button></div>
     ${completenessBlock(f)}
+    ${isAdmin() ? `<div class="logins-box"><span class="pc-title">Logins for this flat</span>${loginsHtml(f.id)}</div>`
+      : `<p class="login-note">You're signed in as <strong>${esc(S.user.name || '')}</strong>${S.user.email ? ` (${esc(S.user.email)})` : ''}. Family members can sign in with their own accounts; the treasurer links them to this flat.</p>`}
     ${p ? `<dl class="details">
         ${item('Owner', esc(f.owner))}${item('Living here', esc(p.occupancy))}${item('Tenant', esc(p.residentName))}
         ${item('Mobile', tel(p.phone))}${item('Other phone', tel(p.altPhone))}${item('Email', esc(p.email))}
@@ -882,6 +902,7 @@ function profileModal(flatId, focusField) {
   openModal(`Flat ${flatId} details`, `
     <p class="muted">Your name is shown to other residents. Phone numbers and other details are visible only to this flat and the treasurer.</p>
     <div data-pc></div>
+    ${isAdmin() ? `<div class="logins-box"><span class="pc-title">Logins for this flat</span>${loginsHtml(flatId)}</div>` : ''}
     <div class="form-grid">
       ${step(1, 'Owner and who lives here')}
       <label class="field span2"><span>Owner name</span><input name="owner" required maxlength="60" autocomplete="name" value="${esc(f.owner)}"></label>
@@ -1251,7 +1272,7 @@ function annualReport() {
       <div class="table-scroll"><table class="data st-annual">
         <thead><tr><th>Month</th><th class="num">Collected</th><th class="num">Spent</th><th class="num">Net</th><th class="num">Balance</th></tr></thead>
         <tbody><tr class="muted-row"><td>Opening balance</td><td></td><td></td><td></td><td class="num">${money(opening)}</td></tr>
-          ${months.map(m => { const i = S.collections[m] || 0, o = spent[m] || 0; return `<tr><td>${monthLabel(m, true)}</td><td class="num">${money(i)}</td><td class="num">${money(o)}</td>
+          ${months.map(m => { const i = S.collections[m] || 0, o = spent[m] || 0; return `<tr><td><span class="wide-only">${monthLabel(m, true)}</span><span class="narrow-only">${monthLabel(m)}</span></td><td class="num">${money(i)}</td><td class="num">${money(o)}</td>
             <td class="num ${i - o < 0 ? 'neg' : ''}">${money(i - o)}</td><td class="num">${money(balanceThrough(m))}</td></tr>`; }).join('')}</tbody>
         <tfoot><tr><th>Total</th><th class="num">${money(totalIn)}</th><th class="num">${money(totalSpent)}</th><th class="num">${money(totalIn - totalSpent)}</th><th class="num">${money(balanceThrough(months.at(-1)))}</th></tr></tfoot>
       </table></div>
@@ -1414,14 +1435,14 @@ function membersCard() {
   const roleOpts = sel => ['pending', 'resident', 'admin'].map(r => `<option${r === sel ? ' selected' : ''}>${r}</option>`).join('');
   return `<div class="card">
     <div class="card-head"><h2>Members</h2><span class="muted">Approve residents and link them to their flat</span></div>
-    ${users.length ? `<div class="table-scroll"><table class="data">
+    ${users.length ? `<div class="table-scroll"><table class="data stack members-table">
       <thead><tr><th>Name</th><th>Role</th><th>Flat</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr data-uid="${esc(u.id)}">
-        <td><strong>${esc(u.name || '')}</strong><br><small class="muted">${esc(u.email || '')}${u.phone ? ' · ' + esc(u.phone) : ''}</small>
+        <td class="stack-full"><strong>${esc(u.name || '')}</strong><br><small class="muted">${esc(u.email || '')}${u.phone ? ' · ' + esc(u.phone) : ''}</small>
           ${u.role === 'pending' && u.requestedFlat ? `<br><span class="badge warn">Asks for Flat ${esc(u.requestedFlat)}</span>` : ''}</td>
-        <td><select class="select-sm" name="role">${roleOpts(u.role === 'pending' && u.requestedFlat ? 'resident' : u.role)}</select></td>
-        <td><select class="select-sm" name="flatId">${flatOpts(u.flatId || u.requestedFlat)}</select></td>
-        <td class="num"><button class="btn sm ${u.role === 'pending' ? 'primary' : 'ghost'}" data-action="save-member" data-id="${esc(u.id)}">${u.role === 'pending' ? 'Approve' : 'Save'}</button></td></tr>`).join('')}</tbody>
+        <td data-label="Role"><select class="select-sm" name="role" aria-label="Role">${roleOpts(u.role === 'pending' && u.requestedFlat ? 'resident' : u.role)}</select></td>
+        <td data-label="Flat"><select class="select-sm" name="flatId" aria-label="Flat">${flatOpts(u.flatId || u.requestedFlat)}</select></td>
+        <td class="num stack-full"><button class="btn sm ${u.role === 'pending' ? 'primary' : 'ghost'}" data-action="save-member" data-id="${esc(u.id)}">${u.role === 'pending' ? 'Approve' : 'Save'}</button></td></tr>`).join('')}</tbody>
     </table></div>` : empty('Nobody has signed in yet. Share the site link with residents.')}</div>`;
 }
 
