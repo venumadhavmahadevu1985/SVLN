@@ -20,7 +20,7 @@ npm test
 npm run test:rules
 ```
 
-`npm test` runs the unit, desktop and phone projects (175 tests, about 50 s). `npm run test:rules` starts the
+`npm test` runs the unit, desktop and phone projects (183 tests, about 45 s). `npm run test:rules` starts the
 Firestore emulator, so it needs Java. GitHub Actions runs both on every push and pull request, and
 **the site is only published when every test passes** (`.github/workflows/pages.yml`).
 
@@ -50,6 +50,7 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
 | Members, settings, data | `e2e/settings-members.spec.ts` | approve, make admin, move back to pending, rename, opening balance, categories and payment modes, FY start, required fields, backup JSON, import, re-import is idempotent, invalid or broken files |
 | Flat profile completeness | `unit/util.spec.ts`, `e2e/profile.spec.ts` | scoring rules (owner, tenant, vacant, invalid mobile, No vehicles, emergency contact), resident nudge and checklist, Complete now focuses the first missing field, live % in the form, reaching 100%, admin N-of-8 card, Profile column, incomplete-only filter, Remind and Copy reminders text, residents can't see other flats |
 | Busy buttons | `e2e/busy.spec.ts` | loading spinner on first load, dialog Save / page form / Approve / Save payment spin and are disabled while the (deliberately slowed) database works, double taps and Enter save only once, instant buttons never spin, button usable again after an error |
+| Family members | `e2e/family.spec.ts`, rules tests | one row per member following the count, rows kept while changing the count, max 20, save and show on My flat, reopen prefilled, extra and empty rows dropped, relation choices, XSS, treasurer view; rules: own flat only, list of at most 20 |
 | Resident journey | `e2e/resident.spec.ts` | menu, blocked admin pages, own dues, update flat details (seen by admin), validation, role switch |
 | Edge cases | `e2e/edge-cases.spec.ts` | XSS in every text field, ₹1 crore amounts, negative balance, overpayment, ₹0 payment refused, demo reset, theme persists, deep links, dialog cancel and backdrop, no console errors |
 | Phone layout | `e2e/layout.mobile.spec.ts` | no sideways scroll on any page, grid scrolls in place, bottom bar and More, dialogs fit, resident bar |

@@ -843,9 +843,35 @@ function flatDetailsCard(f) {
         ${item('Family members', p.members ? esc(p.members) : '')}${item('Vehicles', esc(p.vehicles))}
         ${item('Emergency contact', esc([p.emergencyName, p.emergencyPhone].filter(Boolean).join(' · ')))}
       </dl>
+      ${p.family?.length ? `<div class="family-list"><h3 class="duties-title">Family members</h3><ul>${p.family.map(m => `<li>
+        <strong>${esc(m.name || '—')}</strong>${m.relation ? ` · ${esc(m.relation)}` : ''}${m.age ? ` · ${esc(m.age)} yrs` : ''}${m.phone ? ` · ${tel(m.phone)}` : ''}</li>`).join('')}</ul></div>` : ''}
       <p class="hint">Updated ${p.updatedAt ? dateTimeLabel(p.updatedAt) : ''}${p.updatedBy ? ' by ' + esc(p.updatedBy) : ''}. Phone numbers are visible only to this flat and the treasurer.</p>`
       : '<p class="muted">No details yet. Add the owner name and a phone number so the treasurer can reach this flat.</p>'}
   </div>`;
+}
+
+// ----- family members (private, like the rest of the flat's details) -----
+const MAX_FAMILY = 20;
+const FAMILY_KEYS = ['name', 'relation', 'age', 'phone'];
+const FAMILY_RELATIONS = ['Self', 'Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Grandparent', 'Grandchild', 'Other'];
+
+function familyRow(i, m = {}) {
+  return `<fieldset class="family-row" data-family-row="${i}">
+    <legend>Member ${i + 1}</legend>
+    <label class="field fam-name"><span>Name</span><input name="fm_name_${i}" maxlength="60" value="${esc(m.name || '')}"></label>
+    <label class="field"><span>Relation</span><input name="fm_relation_${i}" maxlength="30" list="familyRelations" value="${esc(m.relation || '')}" placeholder="e.g. Spouse"></label>
+    <label class="field"><span>Age</span><input type="number" name="fm_age_${i}" min="0" max="120" inputmode="numeric" value="${esc(m.age ?? '')}"></label>
+    <label class="field"><span>Mobile (optional)</span><input type="tel" name="fm_phone_${i}" maxlength="20" inputmode="tel" value="${esc(m.phone || '')}"></label>
+  </fieldset>`;
+}
+
+// Rows beyond the "Family members" number are dropped; completely empty rows are not saved.
+function readFamily(fd, count) {
+  const n = Math.min(Math.max(count, 0), MAX_FAMILY);
+  return Array.from({ length: n }, (_, i) => {
+    const v = k => String(fd.get(`fm_${k}_${i}`) || '').trim();
+    return { name: v('name'), relation: v('relation'), age: v('age') ? Math.round(Number(v('age'))) : null, phone: v('phone') };
+  }).filter(m => m.name || m.relation || m.age !== null || m.phone);
 }
 
 // focusField: a form input name (from profileCompleteness) to scroll to and highlight, for "Complete now".
@@ -866,7 +892,9 @@ function profileModal(flatId, focusField) {
       <label class="field"><span>Other phone</span><input type="tel" name="altPhone" maxlength="20" inputmode="tel" value="${esc(p.altPhone || '')}"></label>
       <label class="field span2"><span>Email</span><input type="email" name="email" maxlength="80" autocomplete="email" value="${esc(p.email || '')}"></label>
       ${step(3, 'Family and vehicles')}
-      <label class="field"><span>Family members</span><input type="number" name="members" min="0" max="20" value="${esc(p.members || '')}"></label>
+      <label class="field"><span>Family members</span><input type="number" name="members" min="0" max="${MAX_FAMILY}" value="${esc(p.members || '')}"></label>
+      <div class="family-rows span2" data-family-rows></div>
+      ${datalist('familyRelations', FAMILY_RELATIONS)}
       <label class="field check"><input type="checkbox" name="noVehicles"${noVehicles ? ' checked' : ''}><span>No vehicles</span></label>
       <label class="field span2"><span>Vehicles</span><input name="vehicles" maxlength="120" value="${esc(noVehicles ? '' : p.vehicles || '')}" placeholder="Registration numbers, e.g. car and bike"${noVehicles ? ' disabled' : ''}></label>
       ${step(4, 'Emergency contact')}
@@ -880,6 +908,9 @@ function profileModal(flatId, focusField) {
       for (const k of PROFILE_FIELDS) doc[k] = String(fd.get(k) || '').trim();
       if (fd.get('noVehicles')) doc.vehicles = NO_VEHICLES;
       doc.members = Number(doc.members) || 0;
+      const family = readFamily(fd, doc.members);
+      // Only write `family` when it's used (or being cleared), so flats that skip it never send the field.
+      if (family.length || p.family) doc.family = family;
       await save('flatProfiles', doc, `Flat ${flatId} details`);
       await refresh('Details saved');
     },
@@ -897,6 +928,22 @@ function profileModal(flatId, focusField) {
   form.addEventListener('input', update);
   form.addEventListener('change', update);
   update();
+
+  // One row per family member, following the "Family members" number. Rows keep what was typed when
+  // the number goes down and back up again (until the form is saved).
+  const famBox = form.querySelector('[data-family-rows]');
+  const typed = [...(p.family || [])];
+  const renderFamily = () => {
+    famBox.querySelectorAll('[data-family-row]').forEach(row => {
+      const i = Number(row.dataset.familyRow);
+      typed[i] = Object.fromEntries(FAMILY_KEYS.map(k => [k, el[`fm_${k}_${i}`].value]));
+    });
+    const n = Math.min(Math.max(parseInt(el.members.value, 10) || 0, 0), MAX_FAMILY);
+    famBox.innerHTML = n ? `<p class="hint">Please add each person living in the flat.</p>${Array.from({ length: n }, (_, i) => familyRow(i, typed[i])).join('')}` : '';
+  };
+  el.members.addEventListener('input', renderFamily);
+  renderFamily();
+
   const target = focusField && el[focusField];
   if (target) {
     target.closest('.field')?.classList.add('pc-focus');

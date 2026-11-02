@@ -31,7 +31,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
 - **Dues:** a flats × months grid of who has paid, a pending list with Copy and WhatsApp reminders, and maintenance amount settings.
 - **My flat (residents):** dues history, plus the flat's own details, which are private to that flat and the admin.
-  Each owner fills in their own details in a 4-step form with a live "% complete".
+  Each owner fills in their own details in a 4-step form with a live "% complete". Entering **Family members = N** shows N rows (Name, Relation, Age, optional Mobile), saved as `family` on the flat's private details.
 - **Profile completeness:** each flat gets a score calculated from its details (never stored).
   - **Residents** see a progress bar, what's still needed, and **Complete now** on Home and My flat.
   - **The treasurer** sees "Flat details: N of 8 complete" on Home, a **Profile** column and a **Show incomplete only** filter in Dues → Flats & amount, and **Remind** / **Copy reminders** for WhatsApp messages listing what each flat is missing.
@@ -74,7 +74,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[] |
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
 | `flats/{flatNo}` | owner, sqft, override |
-| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, vehicles, emergencyName, emergencyPhone (private) |
+| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone (private) |
 | `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path}; salary payments also have `payslip` {staffId, month, salary, extra, deductions, note, name, role, phone, duties[]} |
 | `payments/{id}` | flatId, month, amount, paidOn, mode, ref |
 | `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes. Staff are vendors with `kind: 'staff'` plus role, salary, shift, joinedOn, duties[], category, payMode, upi |

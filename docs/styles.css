@@ -362,6 +362,16 @@ body.bare .site-credit { padding-bottom: 20px; }
 .page-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 16px; color: var(--muted); }
 .page-loading .spinner { width: 24px; height: 24px; border-width: 3px; color: var(--brand); }
 
+/* family member rows in the flat details form */
+.family-rows { display: flex; flex-direction: column; gap: 10px; }
+.family-rows:empty { display: none; }
+.family-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 0; background: var(--surface-2);
+  display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.family-row legend { padding: 0 6px; font-weight: 700; font-size: 13px; color: var(--brand-strong); }
+.family-row .fam-name { grid-column: 1 / -1; }
+.family-list ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.family-list { margin-top: 12px; }
+
 /* flat profile completeness */
 .pc { display: flex; align-items: center; gap: 10px; }
 .pc-track { flex: 1; height: 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
