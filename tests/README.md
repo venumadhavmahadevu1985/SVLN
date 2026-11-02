@@ -22,7 +22,7 @@ npm run test:rules
 
 `npm test` runs the unit, desktop and phone projects (183 tests, about 45 s). `npm run test:rules` starts the
 Firestore emulator, so it needs Java. GitHub Actions runs both on every push and pull request, and
-**the site is only published when every test passes** (`.github/workflows/pages.yml`).
+**the site is only published when every test passes**. Locally, `.githooks/pre-push` runs the same suite and refuses any push that fails (`.github/workflows/pages.yml`).
 
 ## How the end-to-end tests work
 
@@ -53,6 +53,8 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
 | Family members | `e2e/family.spec.ts`, rules tests | one row per member following the count, rows kept while changing the count, max 20, save and show on My flat, reopen prefilled, extra and empty rows dropped, relation choices, XSS, treasurer view; rules: own flat only, list of at most 20 |
 | Resident journey | `e2e/resident.spec.ts` | menu, blocked admin pages, own dues, update flat details (seen by admin), validation, role switch |
 | Edge cases | `e2e/edge-cases.spec.ts` | XSS in every text field, ₹1 crore amounts, negative balance, overpayment, ₹0 payment refused, demo reset, theme persists, deep links, dialog cancel and backdrop, no console errors |
+| Responsive (phones) | `e2e/responsive.mobile.spec.ts` | every treasurer and resident page and the main dialogs at 320 px and 390 px: no sideways scroll, nothing off-screen, tap targets ≥ 34 px, text ≥ 11 px, compact header; Flats and Members turn into cards |
+| Flat logins | `e2e/logins.spec.ts` | Logins column (signed in / waiting for approval / none), approval moves a login across, admin badge, logins in the flat's details form, residents see only their own login |
 | Phone layout | `e2e/layout.mobile.spec.ts` | no sideways scroll on any page, grid scrolls in place, bottom bar and More, dialogs fit, resident bar |
 | Who can do what | `rules/firestore.rules.test.mjs` | visitors, new sign-ups (first-admin bootstrap only on an empty database), pending, residents (own flat only: payments, details, owner name), admins (everything except rewriting the activity log) |
 

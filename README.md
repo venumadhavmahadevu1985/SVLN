@@ -34,11 +34,13 @@ Residents can read payments only for their own flat. Monthly totals come from `m
   Each owner fills in their own details in a 4-step form with a live "% complete". Entering **Family members = N** shows N rows (Name, Relation, Age, optional Mobile), saved as `family` on the flat's private details.
 - **Profile completeness:** each flat gets a score calculated from its details (never stored).
   - **Residents** see a progress bar, what's still needed, and **Complete now** on Home and My flat.
+  - **Logins:** each flat's card shows who signs in for it (signed in, waiting for approval, admin). Residents see only their own login.
   - **The treasurer** sees "Flat details: N of 8 complete" on Home, a **Profile** column and a **Show incomplete only** filter in Dues → Flats & amount, and **Remind** / **Copy reminders** for WhatsApp messages listing what each flat is missing.
   - **Required:** owner name, who lives here, mobile, family members, vehicles (or "No vehicles", saved as `None`, so no new field and no rules change), and an emergency contact. Rented flats also need the tenant name; vacant flats need only owner name and mobile.
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
+- **Phones first:** every page and dialog is checked at 320–430 px wide. On phones, the Flats and Members tables turn into one card per flat or person.
 - **Busy buttons:** any button that waits on the database (Save, Delete, Approve, Save payment, Pay salary, Import, Sign in…) shows a spinner and is disabled until it finishes, so double taps can't save twice.
 - **SVLN phone app:** installs to the home screen as **SVLN**, with an icon styled on the building's name board (`docs/icons/`). Android shows an **Install** button; iPhone shows the Share → Add to Home Screen steps. Light and dark themes, building colours, and it works offline with the last data it loaded.
 
@@ -91,6 +93,11 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 
 ### Release rule: prod only on approval
 
+0. **Test everything before pushing anywhere.** Run the full suite (`npm test`: every use case, edge case and flow,
+   on desktop and phone) and fix every failure *before* pushing to any branch. A versioned git hook enforces this:
+   `.githooks/pre-push` syntax-checks the site, runs the whole Playwright suite (and the security-rules tests when
+   Java is installed), and refuses the push if anything fails. Enable it once per clone with
+   `git config core.hooksPath .githooks`. Never bypass it with `--no-verify`.
 1. Every change goes to **`stage` first**. Push it, let CI pass, and check https://venumadhavmahadevu1985.github.io/SVLN/stage/.
 2. **Nothing is merged or pushed to `prod` until the owner explicitly says "deploy to PROD".**
    Pushing to `prod` is what changes the live site that residents use.

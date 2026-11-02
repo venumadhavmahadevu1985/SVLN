@@ -264,7 +264,7 @@ input[type="file"] { padding: 9px 12px; }
 .dues-grid th { font-weight: 600; color: var(--muted); white-space: nowrap; text-align: center; }
 .dues-grid tbody th, .dues-grid tfoot th { text-align: left; position: sticky; left: 0; background: var(--surface); padding-right: 10px; z-index: 1; }
 .dues-grid tbody th strong { display: block; color: var(--text); font-size: 15px; }
-.dues-grid tbody th small { display: block; font-weight: 400; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.dues-grid tbody th small { display: block; font-size: 12px; font-weight: 400; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .dues-grid td { text-align: center; }
 .dues-grid tfoot td { color: var(--muted); font-size: 12px; }
 .dues-grid .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; }
@@ -362,6 +362,37 @@ body.bare .site-credit { padding-bottom: 20px; }
 .page-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 16px; color: var(--muted); }
 .page-loading .spinner { width: 24px; height: 24px; border-width: 3px; color: var(--brand); }
 
+/* flat logins */
+.logins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.logins li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; line-height: 1.3; }
+.logins small { flex-basis: 100%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.logins-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.login-note { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+
+/* Tables that become one card per row on phones (Flats, Members). */
+.narrow-only { display: none; }
+@media (max-width: 640px) {
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody { display: block; width: 100%; }
+  table.stack tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 12px 14px; margin: 0 0 10px;
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+  table.stack td { display: block; padding: 0; border: 0; text-align: left !important; min-width: 0; }
+  table.stack td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+  table.stack td.stack-full, table.stack td.stack-title { grid-column: 1 / -1; }
+  table.stack td.stack-title { font-size: 18px; }
+  table.stack td.stack-title strong::before { content: "Flat "; }
+  table.stack .row-btns.end { justify-content: flex-start; flex-wrap: wrap; }
+  table.stack .row-btns .btn { flex: 1 1 auto; }
+  table.stack .select-sm { width: 100%; max-width: none; min-height: 44px; font-size: 15px; }
+  table.stack .pc-sm { min-width: 0; }
+  .members-table td.num .btn { width: 100%; min-height: 44px; }
+  .table-scroll:has(> table.stack) { overflow: visible; }
+  /* Annual summary: short month names and tighter cells so all five columns fit */
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+  table.st-annual th, table.st-annual td { padding: 8px 4px; font-size: 13px; }
+}
+
 /* family member rows in the flat details form */
 .family-rows { display: flex; flex-direction: column; gap: 10px; }
 .family-rows:empty { display: none; }
@@ -394,7 +425,7 @@ body.bare .site-credit { padding-bottom: 20px; }
 .pc-list li { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 2px 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .pc-list li .muted { grid-column: 1; font-size: 13px; }
 .pc-list li .pc { grid-column: 2; grid-row: 1 / span 2; }
-.link-btn { background: none; border: 0; padding: 4px 0; color: var(--brand); font: inherit; font-weight: 600; cursor: pointer; align-self: flex-start; }
+.link-btn { background: none; border: 0; padding: 4px 0; min-height: 40px; color: var(--brand); font: inherit; font-weight: 600; cursor: pointer; align-self: flex-start; }
 .btn.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-strong); }
 .form-step { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--brand-strong); margin-top: 6px; }
 .form-step span { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-size: 12px; }
