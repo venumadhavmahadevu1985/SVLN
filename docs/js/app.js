@@ -3,6 +3,7 @@
 import { ENV } from './config.js';
 import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
+import { getLang, setLang, startTelugu } from './i18n.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
   addDays, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
@@ -298,6 +299,10 @@ const NAV = [
 ];
 const navItems = () => NAV.filter(n => !n[3] || isAdmin());
 
+// తెలుగు / English: each phone keeps its own choice; switching reloads so every screen redraws in it.
+const langBtn = () => getLang() === 'te'
+  ? '<button class="icon-btn lang-btn" data-action="lang" translate="no" lang="en" aria-label="Switch to English" title="Switch to English">EN</button>'
+  : '<button class="icon-btn lang-btn" data-action="lang" translate="no" lang="te" aria-label="తెలుగులో చూడండి (Telugu)" title="తెలుగులో చూడండి (Telugu)">తె</button>';
 const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label="Switch light or dark theme" title="Light / dark">${icon('moon')}</button>`;
 const stagePill = () => ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — uses the stage database, not the live one">Stage</span>'
   : ENV === 'demo' ? '<span class="pill" title="Sample data — nothing you change here is saved">Demo</span>' : '';
@@ -321,7 +326,7 @@ function renderChrome() {
   const who = !S.user ? '' : store.demo ? demoSwitcher() : `
     <span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
     <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
-  $('#userBox').innerHTML = stagePill() + who + themeBtn();
+  $('#userBox').innerHTML = stagePill() + who + langBtn() + themeBtn();
   renderNav();
 }
 
@@ -338,7 +343,7 @@ function renderNav() {
 function renderBare(html) {
   document.body.classList.add('bare');
   renderBrand();
-  $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + themeBtn();
+  $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + langBtn() + themeBtn();
   $view.removeAttribute('aria-busy');
   $view.innerHTML = html;
 }
@@ -1978,6 +1983,7 @@ const ACTIONS = {
   },
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },
+  lang: () => { setLang(getLang() === 'te' ? 'en' : 'te'); location.reload(); },
   'sign-out': async () => { await stopPresence(); return store.signOut(); },
   'login-google': () => store.signInGoogle(),
 
@@ -2223,6 +2229,7 @@ async function onAuthChange(fbUser) {
 async function boot() {
   const theme = lsGet('svln-theme');
   if (theme) document.documentElement.dataset.theme = theme;
+  if (getLang() === 'te') startTelugu();
   bindEvents();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; refreshInstallBanner(); });

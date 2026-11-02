@@ -543,3 +543,16 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
 .tax-due-row legend { font-weight: 700; font-size: 13px; padding: 0 6px; }
 .tax-table .badge, .house-tax .badge { white-space: normal; max-width: 100%; }
 .badge.later { background: var(--surface-2); color: var(--muted); }
+
+/* Language switch (తె / EN) */
+.lang-btn { font-weight: 700; font-size: 15px; line-height: 1; }
+.topbar-right > .icon-btn { flex: none; }
+.topbar-right .select-sm { min-width: 0; flex: 0 1 auto; }
+@media (max-width: 360px) { .topbar-right { gap: 6px; } .topbar-right > .icon-btn { width: 36px; height: 36px; } }
+.topbar-right .select-sm { min-width: 88px; }
+.brand > span { min-width: 0; }
+.brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 400px) { .who { display: none; } }
+@media (max-width: 360px) { .brand > span { display: none; } }
+.topbar-right { flex: 0 0 auto; }
+@media (max-width: 480px) { .topbar:has(#demoAccount) .brand > span { display: none; } }

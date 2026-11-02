@@ -90,6 +90,21 @@ for (const width of WIDTHS) {
       await check('post notice', () => app.main.getByRole('button', { name: 'Post notice' }).click());
     });
 
+    test('Telugu: every page fits the screen', async ({ app, page }) => {
+      await app.open();
+      await page.locator('#userBox .lang-btn').click();
+      await expect(page.locator('main h1')).toHaveText('అవలోకనం');
+      for (const r of ADMIN_PAGES) {
+        await app.go(r);
+        expect(await layoutProblems(page), `te #/${r}`).toEqual([]);
+      }
+      for (const tab of ['పెండింగ్ బకాయిలు', 'ఫ్లాట్లు & మొత్తం', 'ఇంటి పన్ను']) {
+        await app.go('dues');
+        await app.main.getByRole('tab', { name: tab }).click();
+        expect(await layoutProblems(page), `te dues ${tab}`).toEqual([]);
+      }
+    });
+
     test('Flats and Members show as cards, not cramped tables', async ({ app }) => {
       await app.open();
       await app.duesTab('Flats & amount');
