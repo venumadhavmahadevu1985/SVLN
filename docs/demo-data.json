@@ -78,7 +78,7 @@
       },
       {
         "id": "201",
-        "owner": "",
+        "owner": "Owner 201 (demo)",
         "sqft": 0
       },
       {
@@ -114,6 +114,17 @@
         "members": 4,
         "updatedAt": "2026-10-31T18:00:00.000Z",
         "updatedBy": "Flat 302 resident (demo)"
+      },
+      {
+        "id": "201",
+        "occupancy": "Owner",
+        "phone": "90000 00201",
+        "members": 3,
+        "vehicles": "Bike (demo)",
+        "emergencyName": "Relative (demo)",
+        "emergencyPhone": "90000 00202",
+        "updatedAt": "2026-10-31T18:00:00.000Z",
+        "updatedBy": "Owner 201 (demo)"
       }
     ],
     "expenses": [

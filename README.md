@@ -31,6 +31,11 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
 - **Dues:** a flats × months grid of who has paid, a pending list with Copy and WhatsApp reminders, and maintenance amount settings.
 - **My flat (residents):** dues history, plus the flat's own details, which are private to that flat and the admin.
+  Each owner fills in their own details in a 4-step form with a live "% complete".
+- **Profile completeness:** each flat gets a score calculated from its details (never stored).
+  - **Residents** see a progress bar, what's still needed, and **Complete now** on Home and My flat.
+  - **The treasurer** sees "Flat details: N of 8 complete" on Home, a **Profile** column and a **Show incomplete only** filter in Dues → Flats & amount, and **Remind** / **Copy reminders** for WhatsApp messages listing what each flat is missing.
+  - **Required:** owner name, who lives here, mobile, family members, vehicles (or "No vehicles", saved as `None`, so no new field and no rules change), and an emergency contact. Rented flats also need the tenant name; vacant flats need only owner name and mobile.
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.

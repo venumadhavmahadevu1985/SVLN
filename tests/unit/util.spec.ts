@@ -1,8 +1,66 @@
 import { test, expect } from '@playwright/test';
 import {
   addMonths, monthsBetween, lastDay, fyStart, fyLabel, ordinal, money, moneyShort, esc, trunc, pad,
-  waNumber, friendlyError, monthLabel,
+  waNumber, friendlyError, monthLabel, profileCompleteness, NO_VEHICLES,
 } from '../../docs/js/util.js';
+
+test.describe('flat profile completeness', () => {
+  const owner = { id: '302', owner: 'K. Owner' };
+  const full = {
+    occupancy: 'Owner', phone: '90000 00000', members: 4, vehicles: 'Car AP31 1234',
+    emergencyName: 'Brother', emergencyPhone: '90000 11111',
+  };
+  const keys = (r: { missing: { key: string }[] }) => r.missing.map(m => m.key);
+
+  test('owner-occupied with everything filled is 100%', () => {
+    const r = profileCompleteness(owner, full);
+    expect(r.percent).toBe(100);
+    expect(r.missing).toEqual([]);
+    expect(r.done).toHaveLength(6);
+  });
+
+  test('nothing filled yet is 0% and lists every item, in form order', () => {
+    const r = profileCompleteness({ id: '101', owner: '' }, null);
+    expect(r.percent).toBe(0);
+    expect(keys(r)).toEqual(['owner', 'occupancy', 'mobile', 'members', 'vehicles', 'emergency']);
+    expect(r.missing[0]).toEqual({ key: 'owner', label: 'Owner name', field: 'owner' });
+  });
+
+  test('a rented flat also needs the tenant name', () => {
+    const r = profileCompleteness(owner, { ...full, occupancy: 'Tenant' });
+    expect(r.percent).toBe(86); // 6 of 7
+    expect(keys(r)).toEqual(['tenant']);
+    expect(profileCompleteness(owner, { ...full, occupancy: 'Tenant', residentName: 'R. Tenant' }).percent).toBe(100);
+  });
+
+  test('a vacant flat only needs owner name and mobile', () => {
+    expect(profileCompleteness(owner, { occupancy: 'Vacant', phone: '90000 00000' }).percent).toBe(100);
+    const r = profileCompleteness(owner, { occupancy: 'Vacant' });
+    expect(r.percent).toBe(50);
+    expect(keys(r)).toEqual(['mobile']);
+  });
+
+  test('an invalid mobile counts as missing', () => {
+    expect(keys(profileCompleteness(owner, { ...full, phone: '12345' }))).toEqual(['mobile']);
+    expect(keys(profileCompleteness(owner, { ...full, phone: '' }))).toEqual(['mobile']);
+  });
+
+  test('"No vehicles" counts as done', () => {
+    expect(profileCompleteness(owner, { ...full, vehicles: NO_VEHICLES }).percent).toBe(100);
+    expect(keys(profileCompleteness(owner, { ...full, vehicles: '  ' }))).toEqual(['vehicles']);
+  });
+
+  test('emergency contact needs both a name and a valid phone, and points at the right field', () => {
+    const noPhone = profileCompleteness(owner, { ...full, emergencyPhone: '' });
+    expect(noPhone.missing).toEqual([{ key: 'emergency', label: 'Emergency contact', field: 'emergencyPhone' }]);
+    const noName = profileCompleteness(owner, { ...full, emergencyName: '' });
+    expect(noName.missing[0].field).toBe('emergencyName');
+  });
+
+  test('zero family members counts as missing', () => {
+    expect(keys(profileCompleteness(owner, { ...full, members: 0 }))).toEqual(['members']);
+  });
+});
 
 test.describe('month arithmetic', () => {
   test('addMonths crosses year boundaries both ways', () => {
