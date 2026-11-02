@@ -3,6 +3,7 @@
 import { ENV } from './config.js';
 import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
+import { getLang, setLang, startTelugu } from './i18n.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
   addDays, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
@@ -298,6 +299,10 @@ const NAV = [
 ];
 const navItems = () => NAV.filter(n => !n[3] || isAdmin());
 
+// తెలుగు / English: each phone keeps its own choice; switching reloads so every screen redraws in it.
+const langBtn = () => getLang() === 'te'
+  ? '<button class="icon-btn lang-btn" data-action="lang" translate="no" lang="en" aria-label="Switch to English" title="Switch to English">EN</button>'
+  : '<button class="icon-btn lang-btn" data-action="lang" translate="no" lang="te" aria-label="తెలుగులో చూడండి (Telugu)" title="తెలుగులో చూడండి (Telugu)">తె</button>';
 const themeBtn = () => `<button class="icon-btn" data-action="theme" aria-label="Switch light or dark theme" title="Light / dark">${icon('moon')}</button>`;
 const stagePill = () => ENV === 'stage' ? '<span class="pill stage" title="Test copy of the site — uses the stage database, not the live one">Stage</span>'
   : ENV === 'demo' ? '<span class="pill" title="Sample data — nothing you change here is saved">Demo</span>' : '';
@@ -321,7 +326,7 @@ function renderChrome() {
   const who = !S.user ? '' : store.demo ? demoSwitcher() : `
     <span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
     <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
-  $('#userBox').innerHTML = stagePill() + who + themeBtn();
+  $('#userBox').innerHTML = stagePill() + who + langBtn() + themeBtn();
   renderNav();
 }
 
@@ -338,7 +343,7 @@ function renderNav() {
 function renderBare(html) {
   document.body.classList.add('bare');
   renderBrand();
-  $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + themeBtn();
+  $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + langBtn() + themeBtn();
   $view.removeAttribute('aria-busy');
   $view.innerHTML = html;
 }
@@ -1166,6 +1171,42 @@ function taxTable() {
     <tbody>${rows || `<tr><td colspan="6">${empty('No flats yet.')}</td></tr>`}</tbody></table></div></div>`;
 }
 
+// Rename (or merge) an expense category everywhere it is used: expenses, staff salary category and
+// the Settings list. Renaming to a category that already exists merges the two.
+function renameCategoryCard() {
+  const counts = {};
+  for (const e of S.db.expenses) counts[e.category] = (counts[e.category] || 0) + 1;
+  const cats = categoryList().slice().sort((a, b) => a.localeCompare(b));
+  if (!cats.length) return '';
+  return `<form class="card stack" data-form="renameCategory">
+    <h2>Rename a category</h2>
+    <p class="hint">Fixes a wrongly typed category on every expense at once (and on staff salaries and the list above). Pick a category that already exists to merge the two.</p>
+    <div class="form-grid">
+      <label class="field"><span>Category</span><select name="from" required><option value="">Choose…</option>
+        ${cats.map(c => `<option value="${esc(c)}">${esc(c)} (${counts[c] || 0} expense${counts[c] === 1 ? '' : 's'})</option>`).join('')}</select></label>
+      <label class="field"><span>New name</span><input name="to" required maxlength="60" list="renameCatList" placeholder="Type or pick a category"></label>
+      ${datalist('renameCatList', cats)}
+    </div>
+    <div><button class="btn primary">Rename</button></div>
+  </form>`;
+}
+
+async function renameCategory(from, to) {
+  if (!from) throw new Error('Choose the category to rename.');
+  if (!to) throw new Error('Type the new name.');
+  if (to === from) throw new Error('The new name is the same as the old one.');
+  const now = new Date().toISOString(), stamp = { updatedAt: now, updatedBy: S.user.name };
+  const exps = S.db.expenses.filter(e => e.category === from);
+  for (const e of exps) await store.put('expenses', { ...e, category: to, ...stamp });
+  const staff = S.db.vendors.filter(v => v.category === from);
+  for (const v of staff) await store.put('vendors', { ...v, category: to, ...stamp });
+  const list = S.settings.categories || [];
+  if (list.includes(from)) await saveSettings({ categories: uniq(list.map(c => c === from ? to : c)) }, `Category renamed: ${from} → ${to}`);
+  await audit('update', 'expenses', 'category', `Category “${from}” renamed to “${to}” on ${exps.length} expense${exps.length === 1 ? '' : 's'}${staff.length ? ` and ${staff.length} staff` : ''}`);
+  if (S.ui.exp.category === from) S.ui.exp.category = 'all';
+  await refresh(`Renamed on ${exps.length} expense${exps.length === 1 ? '' : 's'}`);
+}
+
 function houseTaxSettings() {
   const due = S.settings.houseTaxDue || [], row = (i, label) => {
     const d = due[i] || {};
@@ -1724,6 +1765,7 @@ function viewSettings() {
       <div class="form-grid">${societyFields(S.settings)}</div>
       <div><button class="btn primary">Save</button></div>
     </form>
+    ${renameCategoryCard()}
     ${houseTaxSettings()}
     ${membersCard()}
     <div class="card">
@@ -1941,6 +1983,7 @@ const ACTIONS = {
   },
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },
+  lang: () => { setLang(getLang() === 'te' ? 'en' : 'te'); location.reload(); },
   'sign-out': async () => { await stopPresence(); return store.signOut(); },
   'login-google': () => store.signInGoogle(),
 
@@ -2060,6 +2103,9 @@ const FORMS = {
   async settings(fd) {
     await saveSettings(societyPatch(fd), 'Society settings updated');
     await refresh('Settings saved');
+  },
+  async renameCategory(fd) {
+    await renameCategory(String(fd.get('from') || ''), String(fd.get('to') || '').trim());
   },
   async houseTax(fd) {
     const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));
@@ -2183,6 +2229,7 @@ async function onAuthChange(fbUser) {
 async function boot() {
   const theme = lsGet('svln-theme');
   if (theme) document.documentElement.dataset.theme = theme;
+  if (getLang() === 'te') startTelugu();
   bindEvents();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; refreshInstallBanner(); });
