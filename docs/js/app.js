@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
-  fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
+  addDays, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
 } from './util.js';
 
 // Technical fallbacks for settings fields that may be missing (not society data).
@@ -473,6 +473,7 @@ function viewDashboard() {
       <span>${esc(trunc(n.body, 160))}</span><small class="banner-date">${dateLabel(n.date)}</small></div></a>`).join('')}
     ${isAdmin() ? vendorAlerts() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
+    ${taxBanners()}
     ${!isAdmin() ? myProfileNudge() : ''}
     ${isAdmin() ? profileSummaryCard() : ''}
     ${quickLinks()}
@@ -707,11 +708,11 @@ const billingSummary = () => {
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
-  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount']];
+  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['tax', 'House tax']];
   return `
     <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
-    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : duesFlats()}`;
+    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : duesFlats()}`;
 }
 
 function duesGrid() {
@@ -837,6 +838,7 @@ function duesResident() {
   return `
     <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${ordinal(S.settings.dueDay)}</p></div></div>
     ${flatDetailsCard(f)}
+    ${houseTaxCard(f)}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
@@ -980,6 +982,204 @@ function flatDetailsCard(f) {
       <p class="hint">Updated ${p.updatedAt ? dateTimeLabel(p.updatedAt) : ''}${p.updatedBy ? ' by ' + esc(p.updatedBy) : ''}. Phone numbers are visible only to this flat and the treasurer.</p>`
       : '<p class="muted">No details yet. Add the owner name and a phone number so the treasurer can reach this flat.</p>'}
   </div>`;
+}
+
+// ----- house tax (each flat pays its own; assessment number, bill and paid status are private) -----
+// Due dates come from Settings (two half-years); reminders count from the month tracking started.
+const TAX_DOC_MAX = 650 * 1024;   // PDFs; photos are shrunk to fit a Firestore document
+const taxDueDays = () => Number(S.settings.houseTaxRemindDays) || 30;
+
+function taxDues() {
+  const list = (S.settings.houseTaxDue || []).filter(d => d.month && d.day), out = [];
+  const from = S.settings.startMonth + '-01', until = addDays(todayISO(), 366), y = +todayISO().slice(0, 4);
+  for (const d of list) for (const yr of [y - 1, y, y + 1]) {
+    const day = Math.min(+d.day, lastDay(`${yr}-${pad(d.month)}`)), date = `${yr}-${pad(d.month)}-${pad(day)}`;
+    if (date >= from && date <= until) out.push({ date, label: d.label || 'House tax' });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+const taxPaidFor = (flatId, date) => S.db.flatProfiles[flatId]?.taxPaid?.[date];
+// Unpaid dues that are overdue or coming up within the reminder window.
+const taxReminders = flatId => taxDues().filter(d => daysUntil(d.date) <= taxDueDays() && !taxPaidFor(flatId, d.date));
+
+function taxStatus(flatId, d) {
+  const paid = taxPaidFor(flatId, d.date), n = daysUntil(d.date);
+  if (paid) return { key: 'paid', cls: 'ok', text: `Paid ${paid.amount ? money(paid.amount) + ' ' : ''}on ${dateLabel(paid.paidOn)}` };
+  if (n < 0) return { key: 'overdue', cls: 'bad', text: `Overdue by ${-n} day${n === -1 ? '' : 's'}` };
+  if (n <= taxDueDays()) return { key: 'due', cls: 'warn', text: n === 0 ? 'Due today' : `Due in ${n} day${n === 1 ? '' : 's'}` };
+  return { key: 'later', cls: 'later', text: 'Upcoming' };
+}
+const taxDueText = d => `${d.label} · due ${dateLabel(d.date)}`;
+// The due that matters now for a flat: the oldest unpaid within the window, else the next one.
+const taxFocus = flatId => taxReminders(flatId)[0] || taxDues().find(d => d.date >= todayISO()) || taxDues().slice(-1)[0];
+
+function taxReminderText(f, d) {
+  const p = S.db.flatProfiles[f.id] || {}, who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, reminder: house tax${p.taxAssessmentNo ? ` (Assessment No. ${p.taxAssessmentNo})` : ''} for ${d.label} is due on ${dateLabel(d.date)}. After paying, please mark it paid in the SVLN app: ${siteLink()}`;
+}
+
+function houseTaxCard(f) {
+  const p = S.db.flatProfiles[f.id] || {}, dues = taxDues();
+  return `<div class="card house-tax">
+    <div class="card-head"><h2>House tax</h2>
+      <button class="btn sm ${p.taxAssessmentNo ? 'ghost' : 'primary'}" data-action="edit-tax" data-id="${esc(f.id)}">${p.taxAssessmentNo || p.taxDoc ? 'Edit' : 'Add assessment number'}</button></div>
+    <dl class="details">
+      <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? `<strong class="mono">${esc(p.taxAssessmentNo)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div>
+      <div><dt>Tax document</dt><dd>${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">${icon('clip')}<span>${esc(p.taxDoc.name)}</span></button>` : '<span class="muted">Not uploaded</span>'}</dd></div>
+    </dl>
+    ${dues.length ? `<div class="list tax-dues">${dues.map(d => {
+      const st = taxStatus(f.id, d);
+      return `<div class="pending-row" data-tax-due="${d.date}"><div class="row-main"><strong>${esc(d.label)}</strong><small>Due ${dateLabel(d.date)}</small></div>
+        <span class="badge ${st.cls}">${st.text}</span>
+        <button type="button" class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Edit' : 'Mark paid'}</button></div>`;
+    }).join('')}</div>`
+      : `<p class="hint">${isAdmin() ? 'Set the house tax due dates in Settings to turn on reminders.' : 'The treasurer has not set the house tax due dates yet.'}</p>`}
+    <p class="hint">Visible only to this flat and the treasurer.</p>
+  </div>`;
+}
+
+// Photos are resized and saved as JPEG so a bill fits in the database (no paid storage needed).
+async function readTaxDoc(file) {
+  const asDataUrl = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsDataURL(blob); });
+  if (file.type === 'application/pdf') {
+    if (file.size > TAX_DOC_MAX) throw new Error('This PDF is too large (max 650 KB). Upload a photo of the bill instead.');
+    return { name: file.name, type: file.type, data: await asDataUrl(file) };
+  }
+  if (!file.type.startsWith('image/')) throw new Error('Upload a photo or a PDF of the tax bill.');
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('Could not read this photo.')); i.src = URL.createObjectURL(file); });
+  for (const [max, q] of [[1600, 0.75], [1200, 0.6], [900, 0.5]]) {
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.naturalWidth * k), height: Math.round(img.naturalHeight * k) });
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', q);
+    if (data.length * 0.75 <= TAX_DOC_MAX) return { name: file.name.replace(/\.\w+$/, '') + '.jpg', type: 'image/jpeg', data };
+  }
+  throw new Error('This photo is too large. Try a smaller photo.');
+}
+
+function houseTaxModal(flatId) {
+  const p = S.db.flatProfiles[flatId] || {};
+  openModal(`House tax · Flat ${flatId}`, `<div class="form-grid">
+    <label class="field span2"><span>Assessment number</span><input name="taxAssessmentNo" maxlength="40" autocomplete="off" value="${esc(p.taxAssessmentNo || '')}" placeholder="As printed on the tax bill"></label>
+    <div class="field span2"><label for="taxDocIn"><span>Tax bill or receipt (photo or PDF)</span></label>
+      <input id="taxDocIn" type="file" name="taxDoc" accept="image/*,application/pdf">
+      ${p.taxDoc ? `<small class="muted">Current: ${esc(p.taxDoc.name)} · <label class="inline"><input type="checkbox" name="removeTaxDoc"> remove</label></small>` : ''}
+    </div></div>`, {
+    onSubmit: async fd => {
+      const doc = { ...p, id: flatId, taxAssessmentNo: String(fd.get('taxAssessmentNo') || '').trim() };
+      const file = fd.get('taxDoc'), now = new Date().toISOString();
+      if (file && file.size) {
+        const d = await readTaxDoc(file);
+        await store.put('taxDocs', { id: flatId, ...d, updatedAt: now, updatedBy: S.user.name });
+        doc.taxDoc = { name: d.name, type: d.type, updatedAt: now };
+      } else if (fd.get('removeTaxDoc')) {
+        await store.remove('taxDocs', flatId);
+        delete doc.taxDoc;
+      }
+      await save('flatProfiles', doc, `Flat ${flatId} house tax details`);
+      await refresh('House tax details saved');
+    },
+  });
+}
+
+function taxPaidModal(flatId, date) {
+  const p = S.db.flatProfiles[flatId] || {}, d = taxDues().find(x => x.date === date) || { date, label: 'House tax' }, paid = p.taxPaid?.[date];
+  openModal(`House tax paid · Flat ${flatId}`, `<p class="muted">${esc(taxDueText(d))}${p.taxAssessmentNo ? ` · Assessment No. ${esc(p.taxAssessmentNo)}` : ''}</p>
+    <div class="form-grid">
+      <label class="field"><span>Paid on</span><input type="date" name="paidOn" required max="${todayISO()}" value="${esc(paid?.paidOn || todayISO())}"></label>
+      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="0" step="1" inputmode="numeric" value="${esc(paid?.amount ?? '')}"></label>
+      <label class="field span2"><span>Receipt / transaction number</span><input name="receiptNo" maxlength="60" value="${esc(paid?.receiptNo || '')}"></label>
+      ${paid ? '<label class="inline span2"><input type="checkbox" name="unpaid"> Not paid after all (remove this payment)</label>' : ''}
+    </div>`, {
+    submitLabel: 'Save',
+    onSubmit: async fd => {
+      const taxPaid = { ...(p.taxPaid || {}) };
+      if (fd.get('unpaid')) delete taxPaid[date];
+      else taxPaid[date] = { paidOn: fd.get('paidOn'), amount: Math.round(Number(fd.get('amount'))) || 0, receiptNo: String(fd.get('receiptNo') || '').trim(), by: S.user.name };
+      await save('flatProfiles', { ...p, id: flatId, taxPaid }, `Flat ${flatId} house tax ${fd.get('unpaid') ? 'marked not paid' : 'paid'} — ${d.label} ${date}`);
+      await refresh(fd.get('unpaid') ? 'Payment removed' : 'House tax marked paid');
+    },
+  });
+}
+
+// The tab is opened during the tap (phones block pop-ups opened later), then pointed at the file.
+async function viewTaxDoc(flatId) {
+  const win = window.open('', '_blank');
+  try {
+    const d = await store.get('taxDocs', flatId);
+    if (!d?.data) throw new Error('The tax document could not be found.');
+    const url = URL.createObjectURL(await (await fetch(d.data)).blob());
+    if (win) win.location.href = url;
+    else Object.assign(document.createElement('a'), { href: url, download: d.name }).click();
+  } catch (err) { win?.close(); throw err; }
+}
+
+// Home banners: residents see their own flat's dues; the treasurer sees how many flats still owe.
+function taxBanners() {
+  if (!isAdmin()) {
+    const f = flatById(S.user.flatId);
+    if (!f) return '';
+    const no = S.db.flatProfiles[f.id]?.taxAssessmentNo;
+    return taxReminders(f.id).map(d => {
+      const n = daysUntil(d.date);
+      return `<a class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner" href="#/dues">${icon('home')}<div>
+        <strong>House tax ${n < 0 ? `overdue · was due ${dateLabel(d.date)}` : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'} · ${dateLabel(d.date)}`}</strong>
+        <span>${esc(d.label)}${no ? ` · Assessment No. ${esc(no)}` : ''} · tap to mark it paid</span></div></a>`;
+    }).join('');
+  }
+  return taxDues().filter(d => daysUntil(d.date) <= taxDueDays()).map(d => {
+    const owing = S.db.flats.filter(f => !taxPaidFor(f.id, d.date));
+    if (!owing.length) return '';
+    const n = daysUntil(d.date);
+    return `<a class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner" href="#/dues" data-action="open-tax">${icon('home')}<div>
+      <strong>House tax ${n < 0 ? 'overdue' : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'}`}: ${owing.length} of ${S.db.flats.length} flats not marked paid</strong>
+      <span>${esc(taxDueText(d))} · Flats ${owing.map(f => esc(f.id)).join(', ')}</span></div></a>`;
+  }).join('');
+}
+
+function duesTax() {
+  const dues = taxDues();
+  if (!dues.length) return `<div class="banner info">${icon('home')}<div><strong>Set the house tax due dates</strong>
+    <span>Add the two half-yearly due dates under Settings → House tax to turn on reminders. You can still add each flat's assessment number below.</span></div></div>
+    ${taxTable()}`;
+  return taxTable();
+}
+
+function taxTable() {
+  const rows = S.db.flats.map(f => {
+    const p = S.db.flatProfiles[f.id] || {}, d = taxFocus(f.id), st = d && taxStatus(f.id, d);
+    const wa = waNumber(p.phone);
+    return `<tr data-tax-row="${esc(f.id)}">
+      <td class="stack-title"><strong>${esc(f.id)}</strong></td>
+      <td data-label="Owner">${esc(f.owner || '—')}</td>
+      <td data-label="Assessment no.">${p.taxAssessmentNo ? `<span class="mono">${esc(p.taxAssessmentNo)}</span>` : '<span class="muted">Not added</span>'}</td>
+      <td data-label="Document">${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">View</button>` : '<span class="muted">—</span>'}</td>
+      <td data-label="Status">${d ? `<span class="badge ${st.cls}">${st.text}</span><small class="muted block">${esc(taxDueText(d))}</small>` : '<span class="muted">—</span>'}</td>
+      <td class="num stack-full"><div class="row-btns end">
+        <button class="btn sm ghost" data-action="edit-tax" data-id="${esc(f.id)}">Edit</button>
+        ${d ? `<button class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Paid ✓' : 'Mark paid'}</button>` : ''}
+        ${d && st.key !== 'paid' && wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(taxReminderText(f, d))}">${icon('chat')}<span>Remind</span></a>` : ''}
+      </div></td></tr>`;
+  }).join('');
+  return `<div class="card"><div class="card-head"><h2>House tax by flat</h2><span class="muted">Reminders start ${taxDueDays()} days before each due date</span></div>
+    <div class="table-scroll"><table class="stack tax-table"><thead><tr><th>Flat</th><th>Owner</th><th>Assessment no.</th><th>Document</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="6">${empty('No flats yet.')}</td></tr>`}</tbody></table></div></div>`;
+}
+
+function houseTaxSettings() {
+  const due = S.settings.houseTaxDue || [], row = (i, label) => {
+    const d = due[i] || {};
+    return `<fieldset class="tax-due-row"><legend>${label}</legend>
+      <label class="field"><span>Due month</span><select name="taxMonth${i}"><option value="">Not set</option>${monthOptions(d.month)}</select></label>
+      <label class="field"><span>Due day</span><input type="number" name="taxDay${i}" min="1" max="31" value="${esc(d.day || '')}"></label></fieldset>`;
+  };
+  return `<form class="card stack" data-form="houseTax">
+    <h2>House tax</h2>
+    <p class="hint">Each flat pays its own house tax in two half-yearly instalments. Set the last date to pay each one; flats see a reminder on Home before it is due.</p>
+    <div class="form-grid">${row(0, '1st half-year')}${row(1, '2nd half-year')}
+      <label class="field"><span>Remind this many days before</span><input type="number" name="houseTaxRemindDays" min="1" max="120" value="${esc(taxDueDays())}"></label></div>
+    <div><button class="btn primary">Save</button></div>
+  </form>`;
 }
 
 // ----- family members (private, like the rest of the flat's details) -----
@@ -1524,6 +1724,7 @@ function viewSettings() {
       <div class="form-grid">${societyFields(S.settings)}</div>
       <div><button class="btn primary">Save</button></div>
     </form>
+    ${houseTaxSettings()}
     ${membersCard()}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
@@ -1774,6 +1975,10 @@ const ACTIONS = {
   'copy-all-reminders': () => copyText(S.db.flats.map(f => ({ f, o: outstanding(f) })).filter(r => r.o.total > 0)
     .map(r => reminderText(r.f, r.o)).join('\n\n')),
   'edit-profile': ds => profileModal(ds.id),
+  'edit-tax': ds => houseTaxModal(ds.id),
+  'tax-paid': ds => taxPaidModal(ds.id, ds.date),
+  'view-tax-doc': ds => viewTaxDoc(ds.id),
+  'open-tax': () => { S.ui.duesTab = 'tax'; location.hash = '#/dues'; if (S.route === 'dues') rerender(); },
   'complete-profile': ds => profileModal(ds.id, ds.field),
   'toggle-incomplete': () => { S.ui.incompleteOnly = !S.ui.incompleteOnly; rerender(); },
   'open-flats': () => { S.ui.duesTab = 'flats'; S.ui.incompleteOnly = true; location.hash = '#/dues'; },
@@ -1855,6 +2060,15 @@ const FORMS = {
   async settings(fd) {
     await saveSettings(societyPatch(fd), 'Society settings updated');
     await refresh('Settings saved');
+  },
+  async houseTax(fd) {
+    const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));
+    for (const d of houseTaxDue) {
+      if (!d.month !== !d.day) throw new Error(`Set both the month and the day for the ${d.label}, or neither.`);
+      if (d.day > 31) throw new Error('Due day must be between 1 and 31.');
+    }
+    await saveSettings({ houseTaxDue: houseTaxDue.filter(d => d.month), houseTaxRemindDays: Number(fd.get('houseTaxRemindDays')) || 30 }, 'House tax due dates updated');
+    await refresh('House tax settings saved');
   },
   async setup(fd) {
     const now = new Date().toISOString();

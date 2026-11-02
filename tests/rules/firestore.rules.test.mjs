@@ -210,3 +210,37 @@ describe('who is online (presence)', () => {
     await assertFails(getDocs(collection(as(null), 'presence')));
   });
 });
+
+describe('house tax', () => {
+  const bill = (extra = {}) => ({ name: 'bill.jpg', type: 'image/jpeg', data: 'data:image/jpeg;base64,AAAA', updatedAt: 'now', updatedBy: 'x', ...extra });
+  test('a resident keeps their own assessment number, paid status and bill', async () => {
+    const db = as(RES);
+    await assertSucceeds(updateDoc(doc(db, 'flatProfiles/302'), {
+      taxAssessmentNo: '1074/22/0302', taxDoc: { name: 'bill.jpg', type: 'image/jpeg' },
+      taxPaid: { '2026-11-15': { paidOn: '2026-11-05', amount: 1900 } } }));
+    await assertSucceeds(setDoc(doc(db, 'taxDocs/302'), bill()));
+    await assertSucceeds(getDoc(doc(db, 'taxDocs/302')));
+    await assertSucceeds(deleteDoc(doc(db, 'taxDocs/302')));
+  });
+  test("cannot see or change another flat's tax details or bill", async () => {
+    const db = as(RES);
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'taxDocs/101'), bill()));
+    await assertFails(getDoc(doc(db, 'taxDocs/101')));
+    await assertFails(setDoc(doc(db, 'taxDocs/101'), bill()));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/101'), { taxAssessmentNo: 'X' }));
+  });
+  test('bad values are refused: long assessment number, paid not a map, bill too big or with extra fields', async () => {
+    const db = as(RES);
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxAssessmentNo: 'x'.repeat(41) }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPaid: 'yes' }));
+    await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ data: 'x'.repeat(1000000) })));
+    await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ owner: 'x' })));
+  });
+  test('admins can see and manage every flat; pending sign-ups cannot', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'taxDocs/101'), bill()));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'taxDocs/101')));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'flatProfiles/101'), { taxPaid: {} }));
+    await assertFails(getDoc(doc(as(PENDING), 'taxDocs/101')));
+    await assertFails(setDoc(doc(as(null), 'taxDocs/101'), bill()));
+  });
+});

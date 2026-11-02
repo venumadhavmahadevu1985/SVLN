@@ -532,3 +532,14 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
   body.print-slip > *:not(#printArea) { display: none !important; }
   body.print-slip #printArea { display: block; padding: 0 8mm; }
 }
+
+/* House tax */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .02em; }
+.muted.block { display: block; font-size: 12px; margin-top: 2px; }
+.house-tax .tax-dues { margin-top: 12px; }
+.house-tax .pending-row { gap: 8px 10px; flex-wrap: wrap; }
+.house-tax .link-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; }
+.tax-due-row { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px 12px; margin: 0; display: grid; grid-template-columns: 1fr 110px; gap: 10px; min-width: 0; }
+.tax-due-row legend { font-weight: 700; font-size: 13px; padding: 0 6px; }
+.tax-table .badge, .house-tax .badge { white-space: normal; max-width: 100%; }
+.badge.later { background: var(--surface-2); color: var(--muted); }

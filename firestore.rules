@@ -38,10 +38,22 @@ service cloud.firestore {
       allow read: if isAdmin() || isMyFlat(id);
       allow create, update: if isAdmin() || (isMyFlat(id) && request.resource.data.keys().hasOnly([
         'occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles',
-        'emergencyName', 'emergencyPhone', 'family', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        'emergencyName', 'emergencyPhone', 'family', 'taxAssessmentNo', 'taxDoc', 'taxPaid',
+        'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
         && (!('family' in request.resource.data)
-            || (request.resource.data.family is list && request.resource.data.family.size() <= 20)));
+            || (request.resource.data.family is list && request.resource.data.family.size() <= 20))
+        && (!('taxAssessmentNo' in request.resource.data)
+            || (request.resource.data.taxAssessmentNo is string && request.resource.data.taxAssessmentNo.size() <= 40))
+        && (!('taxPaid' in request.resource.data) || request.resource.data.taxPaid is map));
       allow delete: if isAdmin();
+    }
+
+    // House tax bill / receipt for a flat (a photo or PDF saved as text, under 1 MB): same privacy as flat details.
+    match /taxDocs/{id} {
+      allow read, delete: if isAdmin() || isMyFlat(id);
+      allow create, update: if (isAdmin() || isMyFlat(id))
+        && request.resource.data.keys().hasOnly(['name', 'type', 'data', 'updatedAt', 'updatedBy'])
+        && request.resource.data.data is string && request.resource.data.data.size() < 1000000;
     }
 
     // Society name + address for the sign-in page (readable before sign-in).
