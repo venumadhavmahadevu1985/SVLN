@@ -50,4 +50,13 @@ test.describe('Phone layout', () => {
     await app.open('dashboard', RESIDENT);
     await expect(page.locator('#bottomNav')).toContainText('My flat');
   });
+
+  test('the developer credit is readable above the bottom bar', async ({ app, page }) => {
+    await app.open();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const text = page.locator('footer.site-credit strong');
+    await expect(text).toBeInViewport();
+    const credit = (await text.boundingBox())!, bar = (await page.locator('#bottomNav').boundingBox())!;
+    expect(credit.y + credit.height).toBeLessThanOrEqual(bar.y);
+  });
 });

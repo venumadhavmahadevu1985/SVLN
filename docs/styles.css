@@ -58,7 +58,7 @@ a { color: var(--brand); }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 /* ---------- layout ---------- */
-#app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+#app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; }
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 16px; background: var(--band); color: var(--on-brand);
@@ -82,7 +82,7 @@ a { color: var(--brand); }
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
 }
 
-main { padding: 16px 16px 104px; max-width: 1080px; width: 100%; margin: 0 auto; outline: none; display: flex; flex-direction: column; gap: 16px; }
+main { padding: 16px 16px 24px; max-width: 1080px; width: 100%; margin: 0 auto; outline: none; display: flex; flex-direction: column; gap: 16px; }
 .sidenav { display: none; }
 .bottomnav {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr);
@@ -105,7 +105,8 @@ body.bare .sidenav, body.bare .bottomnav { display: none !important; }
   .sidenav a:hover { background: var(--surface-2); color: var(--text); }
   .sidenav a.active { background: var(--brand-soft); color: var(--brand-strong); }
   .bottomnav { display: none; }
-  main { padding: 24px 28px 48px; }
+  main { padding: 24px 28px 32px; }
+  .site-credit { padding-bottom: 20px; }
 }
 
 /* ---------- building blocks ---------- */
@@ -334,11 +335,33 @@ table.data tfoot th { color: var(--text); border-bottom: 0; }
 .slip-sign strong { color: var(--text); }
 #printArea { display: none; }
 
+/* developer credit at the foot of every page (kept clear of the phone's bottom bar) */
+.site-credit { grid-column: 1 / -1; text-align: center; font-size: 12px; color: var(--muted);
+  padding: 8px 16px calc(84px + env(safe-area-inset-bottom)); }
+.site-credit strong { color: var(--text); font-weight: 600; }
+body.bare .site-credit { padding-bottom: 20px; }
+
 /* "Install the SVLN app" prompt */
 .banner.install { align-items: center; text-align: left; border-left-color: var(--brand); background: var(--brand-soft); }
 .banner.install img { border-radius: 11px; flex: none; box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
 .banner.install .row-btns { margin-top: 8px; }
 .brand img { border-radius: 9px; }
+/* busy buttons: a spinner replaces the icon (or sits before the label) while the action runs */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner, .is-busy::before {
+  content: ""; display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 50%;
+  border: 2.5px solid color-mix(in srgb, currentColor 28%, transparent); border-top-color: currentColor;
+  animation: spin .7s linear infinite;
+}
+.is-busy { cursor: progress !important; pointer-events: none; }
+.btn.is-busy, .icon-btn.is-busy, .link-btn.is-busy { opacity: 1 !important; }
+.is-busy .ic { display: none; }
+.icon-btn.is-busy::before { width: 18px; height: 18px; }
+.link-btn.is-busy { display: inline-flex; align-items: center; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .spinner, .is-busy::before { animation-duration: 1.6s; } }
+.page-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 16px; color: var(--muted); }
+.page-loading .spinner { width: 24px; height: 24px; border-width: 3px; color: var(--brand); }
+
 /* flat profile completeness */
 .pc { display: flex; align-items: center; gap: 10px; }
 .pc-track { flex: 1; height: 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }

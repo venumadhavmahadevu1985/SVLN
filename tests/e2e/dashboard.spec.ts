@@ -61,4 +61,11 @@ test.describe('Dashboard — treasurer', () => {
     await app.go('does-not-exist');
     await expect(app.heading).toHaveText('Overview');
   });
+
+  test('the developer credit is on every page', async ({ app, page }) => {
+    for (const r of ['dashboard', 'expenses', 'dues', 'reports', 'staff', 'settings']) {
+      await app.go(r);
+      await expect(page.locator('footer.site-credit'), r).toHaveText('Website developed by Venu Madhav Mahadevu (Flat 201)');
+    }
+  });
 });
