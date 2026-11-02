@@ -18,6 +18,10 @@
     }
   ],
   "collections": {
+    "presence": [
+      { "id": "demo-201", "name": "Owner 201 (demo)", "role": "resident", "flatId": "201", "online": true },
+      { "id": "demo-101", "name": "Flat 101 resident (demo)", "role": "resident", "flatId": "101", "online": true }
+    ],
     "public": [
       {
         "id": "info",
@@ -55,7 +59,12 @@
           "Cheque"
         ],
         "id": "settings",
-        "treasurer": "Treasurer (demo)"
+        "treasurer": "Treasurer (demo)",
+        "houseTaxDue": [
+          { "label": "1st half-year", "month": 6, "day": 30 },
+          { "label": "2nd half-year", "month": 11, "day": 15 }
+        ],
+        "houseTaxRemindDays": 30
       },
       {
         "id": "collections",
@@ -111,6 +120,7 @@
       {
         "id": "302",
         "occupancy": "Owner",
+        "taxAssessmentNo": "DEMO-1074-0302",
         "members": 4,
         "updatedAt": "2026-10-31T18:00:00.000Z",
         "updatedBy": "Flat 302 resident (demo)"
@@ -118,6 +128,8 @@
       {
         "id": "201",
         "occupancy": "Owner",
+        "taxAssessmentNo": "DEMO-1074-0201",
+        "taxPaid": { "2026-11-15": { "paidOn": "2026-11-02", "amount": 1850, "receiptNo": "DEMO-R-77", "by": "Owner 201 (demo)" } },
         "phone": "90000 00201",
         "members": 3,
         "vehicles": "Bike (demo)",

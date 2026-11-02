@@ -4,7 +4,7 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 
 let env;
 
@@ -183,5 +183,64 @@ describe('admins', () => {
     const db = as(ADMIN);
     await assertFails(updateDoc(doc(db, 'auditLog/a1'), { summary: 'changed' }));
     await assertFails(deleteDoc(doc(db, 'auditLog/a1')));
+  });
+});
+
+describe('who is online (presence)', () => {
+  const me = (extra = {}) => ({ name: 'Resident 302', role: 'resident', flatId: '302', online: true, lastSeen: serverTimestamp(), ...extra });
+  test('members keep their own entry, stamped with the server time', async () => {
+    const db = as(RES);
+    await assertSucceeds(setDoc(doc(db, `presence/${RES}`), me()));
+    await assertSucceeds(setDoc(doc(db, `presence/${RES}`), me({ online: false })));
+    await assertSucceeds(getDocs(collection(db, 'presence')));
+    await assertSucceeds(deleteDoc(doc(db, `presence/${RES}`)));
+  });
+  test('cannot pretend to be someone else, another flat, an admin, or fake the time', async () => {
+    const db = as(RES);
+    await assertFails(setDoc(doc(db, `presence/${OTHER}`), me({ flatId: '101' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ flatId: '101' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ role: 'admin' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ lastSeen: 1 })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ extra: 'x' })));
+  });
+  test('an admin without a flat can show up; pending and signed-out people cannot see or write', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), `presence/${ADMIN}`), { name: 'Treasurer', role: 'admin', flatId: null, online: true, lastSeen: serverTimestamp() }));
+    await assertFails(setDoc(doc(as(PENDING), `presence/${PENDING}`), { name: 'New', role: 'pending', flatId: null, online: true, lastSeen: serverTimestamp() }));
+    await assertFails(getDocs(collection(as(PENDING), 'presence')));
+    await assertFails(getDocs(collection(as(null), 'presence')));
+  });
+});
+
+describe('house tax', () => {
+  const bill = (extra = {}) => ({ name: 'bill.jpg', type: 'image/jpeg', data: 'data:image/jpeg;base64,AAAA', updatedAt: 'now', updatedBy: 'x', ...extra });
+  test('a resident keeps their own assessment number, paid status and bill', async () => {
+    const db = as(RES);
+    await assertSucceeds(updateDoc(doc(db, 'flatProfiles/302'), {
+      taxAssessmentNo: '1074/22/0302', taxDoc: { name: 'bill.jpg', type: 'image/jpeg' },
+      taxPaid: { '2026-11-15': { paidOn: '2026-11-05', amount: 1900 } } }));
+    await assertSucceeds(setDoc(doc(db, 'taxDocs/302'), bill()));
+    await assertSucceeds(getDoc(doc(db, 'taxDocs/302')));
+    await assertSucceeds(deleteDoc(doc(db, 'taxDocs/302')));
+  });
+  test("cannot see or change another flat's tax details or bill", async () => {
+    const db = as(RES);
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'taxDocs/101'), bill()));
+    await assertFails(getDoc(doc(db, 'taxDocs/101')));
+    await assertFails(setDoc(doc(db, 'taxDocs/101'), bill()));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/101'), { taxAssessmentNo: 'X' }));
+  });
+  test('bad values are refused: long assessment number, paid not a map, bill too big or with extra fields', async () => {
+    const db = as(RES);
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxAssessmentNo: 'x'.repeat(41) }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPaid: 'yes' }));
+    await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ data: 'x'.repeat(1000000) })));
+    await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ owner: 'x' })));
+  });
+  test('admins can see and manage every flat; pending sign-ups cannot', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'taxDocs/101'), bill()));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'taxDocs/101')));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'flatProfiles/101'), { taxPaid: {} }));
+    await assertFails(getDoc(doc(as(PENDING), 'taxDocs/101')));
+    await assertFails(setDoc(doc(as(null), 'taxDocs/101'), bill()));
   });
 });

@@ -38,6 +38,7 @@ test.describe('Dashboard — treasurer', () => {
     await expect(app.main.locator('svg.chart')).toBeVisible();
     await expect(app.main.locator('.legend').first()).toContainText('Collected');
     await expect(app.main.locator('.legend').first()).toContainText('Spent');
+    await app.main.locator('#spendView').selectOption('2026-10');
     const legend = app.main.locator('.donut-legend li', { hasText: 'Watchman / Security' });
     await expect(legend).toContainText('₹4,000');
     await expect(legend).toContainText('50%');

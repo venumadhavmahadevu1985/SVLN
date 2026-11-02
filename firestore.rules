@@ -38,10 +38,22 @@ service cloud.firestore {
       allow read: if isAdmin() || isMyFlat(id);
       allow create, update: if isAdmin() || (isMyFlat(id) && request.resource.data.keys().hasOnly([
         'occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles',
-        'emergencyName', 'emergencyPhone', 'family', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        'emergencyName', 'emergencyPhone', 'family', 'taxAssessmentNo', 'taxDoc', 'taxPaid',
+        'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
         && (!('family' in request.resource.data)
-            || (request.resource.data.family is list && request.resource.data.family.size() <= 20)));
+            || (request.resource.data.family is list && request.resource.data.family.size() <= 20))
+        && (!('taxAssessmentNo' in request.resource.data)
+            || (request.resource.data.taxAssessmentNo is string && request.resource.data.taxAssessmentNo.size() <= 40))
+        && (!('taxPaid' in request.resource.data) || request.resource.data.taxPaid is map));
       allow delete: if isAdmin();
+    }
+
+    // House tax bill / receipt for a flat (a photo or PDF saved as text, under 1 MB): same privacy as flat details.
+    match /taxDocs/{id} {
+      allow read, delete: if isAdmin() || isMyFlat(id);
+      allow create, update: if (isAdmin() || isMyFlat(id))
+        && request.resource.data.keys().hasOnly(['name', 'type', 'data', 'updatedAt', 'updatedBy'])
+        && request.resource.data.data is string && request.resource.data.data.size() < 1000000;
     }
 
     // Society name + address for the sign-in page (readable before sign-in).
@@ -57,6 +69,20 @@ service cloud.firestore {
     match /payments/{id} {
       allow read: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId);
       allow write: if isAdmin();
+    }
+
+    // Who is online: members see each other; each keeps only their own entry, stamped with the
+    // server time and matching their real role and flat.
+    match /presence/{uid} {
+      allow read: if isMember();
+      allow create, update: if isMember() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'role', 'flatId', 'online', 'lastSeen'])
+        && request.resource.data.lastSeen == request.time
+        && request.resource.data.online is bool
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && request.resource.data.role == profile().role
+        && request.resource.data.get('flatId', null) == profile().get('flatId', null);
+      allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
     }
 
     // Append-only activity log.

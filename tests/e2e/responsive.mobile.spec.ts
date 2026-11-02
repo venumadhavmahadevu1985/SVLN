@@ -53,7 +53,7 @@ for (const width of WIDTHS) {
         await app.go(r);
         expect(await layoutProblems(app.page), `#/${r}`).toEqual([]);
       }
-      for (const tab of ['Pending dues', 'Flats & amount'] as const) {
+      for (const tab of ['Pending dues', 'Flats & amount', 'House tax'] as const) {
         await app.duesTab(tab);
         expect(await layoutProblems(app.page), `dues ${tab}`).toEqual([]);
       }
