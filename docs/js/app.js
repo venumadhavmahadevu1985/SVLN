@@ -71,8 +71,9 @@ const ICONS = {
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
 
 // ----- busy buttons -----
-// While a button's work is running it shows a spinner, is disabled and announced as busy, and further
-// taps are ignored, so a slow connection can't save the same thing twice.
+// While a button's work is running it shows the animated S V L N letters, is disabled and announced as
+// busy, and further taps are ignored, so a slow connection can't save the same thing twice.
+const SVLN_LOADER = '<span class="svln-loader" aria-hidden="true"><i>S</i><i>V</i><i>L</i><i>N</i></span>';
 const busyTarget = el => el?.closest?.('.btn, .icon-btn, .link-btn, button') || null;
 const isBusy = el => !!busyTarget(el)?.classList.contains('is-busy');
 async function withBusy(el, work) {
@@ -81,11 +82,13 @@ async function withBusy(el, work) {
   const wasDisabled = btn.disabled;
   btn.classList.add('is-busy');
   btn.setAttribute('aria-busy', 'true');
+  btn.insertAdjacentHTML('afterbegin', SVLN_LOADER);
   if ('disabled' in btn) btn.disabled = true;
   try { return await work(); }
   finally {
     btn.classList.remove('is-busy');
     btn.removeAttribute('aria-busy');
+    btn.querySelector(':scope > .svln-loader')?.remove();
     if ('disabled' in btn) btn.disabled = wasDisabled;
   }
 }
@@ -1789,7 +1792,7 @@ function bindEvents() {
     e.preventDefault();
     if (isBusy(el)) return;
     try {
-      // Only actions that wait (they return a promise) get a spinner; instant ones never flash it.
+      // Only actions that wait (they return a promise) get the loading letters; instant ones never flash them.
       const result = fn(el.dataset, el);
       if (result && typeof result.then === 'function') await withBusy(el, () => result);
     } catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }

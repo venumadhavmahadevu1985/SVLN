@@ -41,7 +41,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
 - **Phones first:** every page and dialog is checked at 320–430 px wide. On phones, the Flats and Members tables turn into one card per flat or person.
-- **Busy buttons:** any button that waits on the database (Save, Delete, Approve, Save payment, Pay salary, Import, Sign in…) shows a spinner and is disabled until it finishes, so double taps can't save twice.
+- **Busy buttons:** any button that waits on the database (Save, Delete, Approve, Save payment, Pay salary, Import, Sign in…) shows the animated **S V L N** loading letters and is disabled until it finishes (the app also opens with a large S V L N loader), so double taps can't save twice.
 - **SVLN phone app:** installs to the home screen as **SVLN**, with an icon styled on the building's name board (`docs/icons/`). Android shows an **Install** button; iPhone shows the Share → Add to Home Screen steps. Light and dark themes, building colours, and it works offline with the last data it loaded.
 
 ## First-time setup (per environment)
