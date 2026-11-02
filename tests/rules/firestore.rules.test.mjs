@@ -135,6 +135,16 @@ describe('residents', () => {
     await assertFails(setDoc(doc(db, 'flatProfiles/101'), { phone: '1' }));
     await assertFails(setDoc(doc(db, 'flatProfiles/302'), { phone: '1', isAdmin: true }));
   });
+  test('can save a family member list on their own flat (a list of at most 20)', async () => {
+    const db = as(RES);
+    const family = [{ name: 'Lakshmi', relation: 'Spouse', age: 40, phone: '' }, { name: 'Ravi', relation: 'Son', age: 12, phone: '' }];
+    await assertSucceeds(setDoc(doc(db, 'flatProfiles/302'), { members: 2, family, updatedAt: 'now', updatedBy: 'R' }));
+    await assertSucceeds(setDoc(doc(db, 'flatProfiles/302'), { members: 0, family: [] }));
+    await assertFails(setDoc(doc(db, 'flatProfiles/101'), { members: 2, family }));
+    await assertFails(setDoc(doc(db, 'flatProfiles/302'), { family: 'not a list' }));
+    await assertFails(setDoc(doc(db, 'flatProfiles/302'), { family: Array.from({ length: 21 }, (_, i) => ({ name: 'P' + i })) }));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'flatProfiles/302')));
+  });
   test('cannot promote themselves or read other members', async () => {
     const db = as(RES);
     await assertFails(updateDoc(doc(db, `users/${RES}`), { role: 'admin' }));

@@ -38,7 +38,9 @@ service cloud.firestore {
       allow read: if isAdmin() || isMyFlat(id);
       allow create, update: if isAdmin() || (isMyFlat(id) && request.resource.data.keys().hasOnly([
         'occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles',
-        'emergencyName', 'emergencyPhone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']));
+        'emergencyName', 'emergencyPhone', 'family', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && (!('family' in request.resource.data)
+            || (request.resource.data.family is list && request.resource.data.family.size() <= 20)));
       allow delete: if isAdmin();
     }
 

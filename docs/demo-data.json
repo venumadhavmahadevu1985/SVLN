@@ -124,7 +124,27 @@
         "emergencyName": "Relative (demo)",
         "emergencyPhone": "90000 00202",
         "updatedAt": "2026-10-31T18:00:00.000Z",
-        "updatedBy": "Owner 201 (demo)"
+        "updatedBy": "Owner 201 (demo)",
+        "family": [
+          {
+            "name": "Owner 201 (demo)",
+            "relation": "Self",
+            "age": 45,
+            "phone": "90000 00201"
+          },
+          {
+            "name": "Spouse (demo)",
+            "relation": "Spouse",
+            "age": 42,
+            "phone": ""
+          },
+          {
+            "name": "Child (demo)",
+            "relation": "Daughter",
+            "age": 14,
+            "phone": ""
+          }
+        ]
       }
     ],
     "expenses": [
