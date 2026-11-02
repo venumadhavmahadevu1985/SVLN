@@ -10,6 +10,8 @@ import {
 
 // Technical fallbacks for settings fields that may be missing (not society data).
 const FALLBACK = { billing: 'fixed', fixedAmount: 0, ratePerSqft: 0, dueDay: 10, fyStartMonth: 4, openingBalance: 0, categories: [], paymentModes: [] };
+// Monthly bills offered as quick links until the treasurer changes the list in Settings.
+const DEFAULT_QUICK = ['Watchman', 'Electricity Bill', 'GVMC', 'Municipal Water'];
 
 // ---------- state & small helpers ----------
 const S = {
@@ -23,7 +25,9 @@ const S = {
   ui: {
     exp: { q: '', month: 'all', category: 'all', vendor: 'all', sort: 'date-desc' },
     duesTab: 'grid', fy: null, reportTab: 'monthly', reportMonth: null, reportFy: null,
+    spendView: null,   // "Where the money went": a month (YYYY-MM) or 'year'; null = current month
   },
+  online: null,        // people using the app right now (null = not available)
 };
 
 const $ = sel => document.querySelector(sel);
@@ -339,6 +343,61 @@ function renderBare(html) {
   $view.innerHTML = html;
 }
 
+// ---------- who is online ----------
+// Each signed-in member keeps presence/{uid} fresh while the app is open and in front; anyone seen
+// in the last few minutes counts as online. The strip updates live without redrawing the page.
+const BEAT_MS = 60_000, ONLINE_MS = 150_000;
+let presence = null;   // { unwatch, timer, tick, onVis, onHide }
+
+function presenceDoc(online) {
+  return { name: S.user.name || S.user.email || '', role: S.user.role, flatId: S.user.flatId || null, online };
+}
+function beat(online = document.visibilityState === 'visible') {
+  return store.setPresence?.(S.user.uid, presenceDoc(online)).catch(() => {});
+}
+function onlineNowHtml() {
+  const list = S.online || [];
+  const me = list.find(p => p.id === S.user?.uid);
+  const others = list.filter(p => p !== me).sort((a, b) => (a.flatId || '').localeCompare(b.flatId || '') || (a.name || '').localeCompare(b.name || ''));
+  const who = p => `<li class="online-chip"><span class="dot" aria-hidden="true"></span><span>${p === me ? 'You' : esc(p.name || 'Member')}</span>
+    <small>${p.role === 'admin' ? 'Admin' + (p.flatId ? ' · ' + esc(p.flatId) : '') : p.flatId ? 'Flat ' + esc(p.flatId) : 'Resident'}</small></li>`;
+  const n = list.length;
+  return `<div class="online-head"><span class="dot live" aria-hidden="true"></span><strong>${n} ${n === 1 ? 'person' : 'people'} online now</strong>
+    ${n === 1 && me ? '<small class="muted">Only you right now</small>' : ''}</div>
+    <ul class="online-list">${[me, ...others].filter(Boolean).map(who).join('')}</ul>`;
+}
+function setOnline(all) {
+  const now = Date.now();
+  S.online = all && all.filter(p => p.online !== false && now - (p.lastSeen || 0) < ONLINE_MS);
+  const el = document.getElementById('onlineNow');
+  if (el) { el.hidden = !S.online; el.innerHTML = onlineNowHtml(); }
+}
+async function startPresence() {
+  await stopPresence(false);
+  if (!store.watchPresence) return;
+  let last = null;
+  const p = presence = {
+    unwatch: store.watchPresence(all => { last = all; setOnline(all); }),
+    timer: setInterval(() => { if (document.visibilityState === 'visible') beat(true); }, BEAT_MS),
+    tick: setInterval(() => setOnline(last), 30_000),   // drop people whose app went quiet
+    onVis: () => beat(),
+    onHide: () => beat(false),
+  };
+  document.addEventListener('visibilitychange', p.onVis);
+  window.addEventListener('pagehide', p.onHide);
+  await beat();
+}
+async function stopPresence(markOffline = true) {
+  const p = presence;
+  if (!p) return;
+  presence = null;
+  p.unwatch?.(); clearInterval(p.timer); clearInterval(p.tick);
+  document.removeEventListener('visibilitychange', p.onVis);
+  window.removeEventListener('pagehide', p.onHide);
+  if (markOffline && S.user) await beat(false);
+  S.online = null;
+}
+
 // ---------- routing ----------
 const VIEWS = {
   dashboard: viewDashboard, expenses: viewExpenses, dues: viewDues, reports: viewReports,
@@ -391,8 +450,8 @@ function viewDashboard() {
   const mSum = (o, ks) => sum(ks, k => o[k] || 0);
   const firstMonth = [s.startMonth, ...Object.keys(spent)].sort()[0];
   const trend = monthsBetween([addMonths(cm, -11), firstMonth].sort().pop(), cm);
-  const fyExp = S.db.expenses.filter(e => e.date.slice(0, 7) >= fy);
-  const donut = topCategories(fyExp);
+  const spendView = S.ui.spendView || cm, spendYear = spendView === 'year';
+  const donut = topCategories(S.db.expenses.filter(e => spendYear ? e.date.slice(0, 7) >= fy && e.date.slice(0, 7) <= cm : e.date.startsWith(spendView)));
   const recent = [...S.db.expenses].sort((a, b) => byExpenseOrder(b, a)).slice(0, 5);
   const pinned = S.db.notices.filter(n => n.pinned).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const prev = addMonths(cm, -1);
@@ -402,6 +461,7 @@ function viewDashboard() {
   return `
     <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div>
       ${isAdmin() ? `<div class="actions"><button class="btn ghost" data-action="add-notice">${icon('megaphone')}<span>Post notice</span></button></div>` : ''}</div>
+    <section id="onlineNow" class="online-now" aria-live="polite"${S.online ? '' : ' hidden'}>${onlineNowHtml()}</section>
     ${installBanner()}
     ${store.demo ? `<div class="banner info">${icon('home')}<div><strong>Demo with sample data</strong>
       <span>Use “View as” at the top to switch between the treasurer and a resident. Try anything — changes are not saved and reset when you reload.</span></div></div>` : ''}
@@ -415,6 +475,7 @@ function viewDashboard() {
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
     ${!isAdmin() ? myProfileNudge() : ''}
     ${isAdmin() ? profileSummaryCard() : ''}
+    ${quickLinks()}
     <section class="kpis">
       ${kpi('Balance in hand', money(balanceThrough(cm)), `Brought forward ${money(balanceThrough(prev))}`, 'hero')}
       ${kpi(`Collected · ${monthLabel(cm)}`, money(coll[cm] || 0), `${monthLabel(prev)}: ${money(coll[prev] || 0)}`)}
@@ -430,14 +491,61 @@ function viewDashboard() {
         ], { title: 'Monthly collections and spending' })}
       </div>
       <div class="card">
-        <div class="card-head"><h2>Where the money went</h2><span class="muted">${fyLabel(fy)}</span></div>
-        ${donut.length ? donutChart(donut) : empty('No expenses recorded this year yet.')}
+        <div class="card-head"><h2>Where the money went</h2>
+          <label class="sr-only" for="spendView">Show spending for</label>
+          <select id="spendView" class="select-sm" data-change="spend-view">
+            ${monthsBetween(fy, cm).reverse().map(m => `<option value="${m}"${m === spendView ? ' selected' : ''}>${monthLabel(m, true)}</option>`).join('')}
+            <option value="year"${spendYear ? ' selected' : ''}>Whole year ${fyLabel(fy)}</option>
+          </select></div>
+        ${donut.length ? donutChart(donut, { centerLabel: spendYear ? 'spent this year' : `spent in ${monthShort(spendView)}` })
+          : empty(spendYear ? 'No expenses recorded this year yet.' : `No expenses recorded in ${monthLabel(spendView, true)} yet.`)}
       </div>
     </section>
     <section class="card">
       <div class="card-head"><h2>Recent expenses</h2><a href="#/expenses" class="link">See all</a></div>
       <div class="list">${recent.map(expenseRow).join('') || empty('No expenses yet.')}</div>
     </section>`;
+}
+
+// ---------- monthly quick links ----------
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const quickList = () => Array.isArray(S.settings.quickExpenses) ? S.settings.quickExpenses : DEFAULT_QUICK;
+const lc = v => String(v || '').toLowerCase();
+
+// The latest expense for a quick link: description starting with the name wins, then the category.
+function lastQuickExpense(label, inMonth) {
+  const l = lc(label), pool = S.db.expenses.filter(e => !inMonth || e.date.startsWith(inMonth));
+  const latest = arr => arr.sort((a, b) => byExpenseOrder(b, a))[0];
+  return latest(pool.filter(e => lc(e.description).startsWith(l))) || latest(pool.filter(e => lc(e.category).startsWith(l)));
+}
+const quickStaff = label => staffList().find(st => lc(st.role).startsWith(lc(label)) || lc(st.name).startsWith(lc(label)));
+
+function quickLinks() {
+  const items = quickList();
+  if (!isAdmin() || !items.length) return '';
+  const cm = curMonth();
+  return `<section class="card quick-links" aria-label="Monthly bills">
+    <div class="card-head"><h2>Monthly bills</h2><span class="muted">${esc(monthLabel(cm, true))} · tap to add</span></div>
+    <div class="quick-grid">${items.map((label, i) => {
+      const paid = lastQuickExpense(label, cm), done = !!paid;
+      return `<button type="button" class="quick-btn${done ? ' done' : ''}" data-action="quick-expense" data-i="${i}">
+        <strong>${esc(label)}</strong>
+        <small>${done ? `✓ Paid ${money(paid.amount)} · ${dateLabel(paid.date)}` : 'Not added this month'}</small></button>`;
+    }).join('')}</div></section>`;
+}
+
+// Start a new expense from the last one with the same name: same category, vendor, mode and
+// amount, the month in the description moved to this month. Staff (e.g. the watchman) open Pay salary.
+function openQuickExpense(label) {
+  const st = quickStaff(label);
+  if (st) return payStaffModal(st);
+  const last = lastQuickExpense(label);
+  const thisMonth = MONTH_NAMES[Number(curMonth().slice(5)) - 1];
+  const draft = last
+    ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: last.amount,
+        description: last.description.replace(new RegExp(`\\b(${MONTH_NAMES.join('|')})\\b`, 'g'), thisMonth) }
+    : { description: label, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
+  openModal(`Add expense · ${label}`, expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
 }
 
 // ---------- expenses ----------
@@ -493,6 +601,7 @@ function viewExpenses() {
         ${isAdmin() ? `<button class="btn primary" data-action="add-expense">${icon('plus')}<span>Add expense</span></button>` : ''}
       </div>
     </div>
+    ${quickLinks()}
     <div class="card toolbar">
       <input type="search" data-filter="q" placeholder="Search description, vendor…" value="${esc(f.q)}" aria-label="Search expenses">
       <div class="filters">
@@ -1391,7 +1500,9 @@ function societyFields(s) {
     <label class="field"><span>Financial year starts in</span><select name="fyStartMonth">${monthOptions(s.fyStartMonth)}</select></label>
     <label class="field span2"><span>How residents should pay</span><textarea name="payNote" rows="2" maxlength="300">${esc(s.payNote || '')}</textarea></label>
     <label class="field"><span>Expense categories (one per line)</span><textarea name="categories" rows="6">${esc((s.categories || []).join('\n'))}</textarea></label>
-    <label class="field"><span>Payment modes (one per line)</span><textarea name="paymentModes" rows="6">${esc((s.paymentModes || []).join('\n'))}</textarea></label>`;
+    <label class="field"><span>Payment modes (one per line)</span><textarea name="paymentModes" rows="6">${esc((s.paymentModes || []).join('\n'))}</textarea></label>
+    <label class="field span2"><span>Monthly bills quick links (one per line)</span><textarea name="quickExpenses" rows="4">${esc(quickList().join('\n'))}</textarea>
+      <small class="muted">Shown on Home and Expenses for quick entry each month. Leave empty to hide.</small></label>`;
 }
 
 function societyPatch(fd) {
@@ -1401,6 +1512,7 @@ function societyPatch(fd) {
   patch.fyStartMonth = Number(fd.get('fyStartMonth')) || FALLBACK.fyStartMonth;
   patch.categories = uniq(lines(fd.get('categories')));
   patch.paymentModes = uniq(lines(fd.get('paymentModes')));
+  if (fd.has('quickExpenses')) patch.quickExpenses = uniq(String(fd.get('quickExpenses') || '').split('\n').map(x => x.trim()));
   return patch;
 }
 
@@ -1628,10 +1740,11 @@ const ACTIONS = {
   },
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },
-  'sign-out': () => store.signOut(),
+  'sign-out': async () => { await stopPresence(); return store.signOut(); },
   'login-google': () => store.signInGoogle(),
 
   'add-expense': () => openModal('Add expense', expenseForm(), { onSubmit: fd => submitExpense(fd) }),
+  'quick-expense': ds => openQuickExpense(quickList()[+ds.i]),
   'view-expense': ds => showExpense(ds.id),
   'edit-expense': ds => {
     const e = S.db.expenses.find(x => x.id === ds.id);
@@ -1775,7 +1888,8 @@ const FORMS = {
 
 const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
-  'demo-account': v => { S.ui.reportMonth = null; store.switchAccount(v); },
+  'spend-view': v => { S.ui.spendView = v; rerender(); },
+  'demo-account': v => { S.ui.reportMonth = null; S.ui.spendView = null; store.switchAccount(v); },
   async import(_, input) {
     const file = input.files[0];
     input.value = '';
@@ -1834,6 +1948,7 @@ async function start() {
   document.body.classList.remove('bare');
   renderChrome();
   route();
+  startPresence();
 }
 
 async function onAuthChange(fbUser) {

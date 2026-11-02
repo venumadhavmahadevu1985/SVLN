@@ -168,6 +168,32 @@ body.bare .sidenav, body.bare .bottomnav { display: none !important; }
 .banner.bad .ic { color: var(--bad); }
 .banner.ok { border-left-color: var(--ok); background: var(--ok-soft); }
 .banner.ok .ic { color: var(--ok); }
+
+/* Monthly bills quick links (Home and Expenses) */
+.quick-links { margin-bottom: 14px; }
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.quick-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 12px; border-radius: 12px;
+  border: 1px dashed var(--border); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.quick-btn:hover { border-color: var(--accent, var(--ok)); }
+.quick-btn strong { font-size: 14px; }
+.quick-btn small { color: var(--muted); font-size: 12px; }
+.quick-btn.done { border-style: solid; border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: var(--ok-soft); }
+.quick-btn.done small { color: var(--ok); font-weight: 600; }
+@media (max-width: 400px) { .quick-grid { grid-template-columns: 1fr 1fr; } }
+
+/* Who is online now (top of Home) */
+.online-now { margin-bottom: 14px; padding: 10px 14px; border-radius: var(--radius, 14px); background: var(--surface); border: 1px solid var(--border); }
+.online-now[hidden] { display: none; }
+.online-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.online-head strong { font-size: 14px; }
+.online-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.online-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--ok-soft); color: var(--text); font-size: 13px; max-width: 100%; }
+.online-chip > span:not(.dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.online-chip small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.online-now .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.online-now .dot.live { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: online-pulse 2s ease-out infinite; }
+@keyframes online-pulse { to { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { .online-now .dot.live { animation: none; } }
 .banner.info { background: var(--brand-soft); }
 
 /* KPIs */

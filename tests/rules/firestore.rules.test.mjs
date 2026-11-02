@@ -4,7 +4,7 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 
 let env;
 
@@ -183,5 +183,30 @@ describe('admins', () => {
     const db = as(ADMIN);
     await assertFails(updateDoc(doc(db, 'auditLog/a1'), { summary: 'changed' }));
     await assertFails(deleteDoc(doc(db, 'auditLog/a1')));
+  });
+});
+
+describe('who is online (presence)', () => {
+  const me = (extra = {}) => ({ name: 'Resident 302', role: 'resident', flatId: '302', online: true, lastSeen: serverTimestamp(), ...extra });
+  test('members keep their own entry, stamped with the server time', async () => {
+    const db = as(RES);
+    await assertSucceeds(setDoc(doc(db, `presence/${RES}`), me()));
+    await assertSucceeds(setDoc(doc(db, `presence/${RES}`), me({ online: false })));
+    await assertSucceeds(getDocs(collection(db, 'presence')));
+    await assertSucceeds(deleteDoc(doc(db, `presence/${RES}`)));
+  });
+  test('cannot pretend to be someone else, another flat, an admin, or fake the time', async () => {
+    const db = as(RES);
+    await assertFails(setDoc(doc(db, `presence/${OTHER}`), me({ flatId: '101' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ flatId: '101' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ role: 'admin' })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ lastSeen: 1 })));
+    await assertFails(setDoc(doc(db, `presence/${RES}`), me({ extra: 'x' })));
+  });
+  test('an admin without a flat can show up; pending and signed-out people cannot see or write', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), `presence/${ADMIN}`), { name: 'Treasurer', role: 'admin', flatId: null, online: true, lastSeen: serverTimestamp() }));
+    await assertFails(setDoc(doc(as(PENDING), `presence/${PENDING}`), { name: 'New', role: 'pending', flatId: null, online: true, lastSeen: serverTimestamp() }));
+    await assertFails(getDocs(collection(as(PENDING), 'presence')));
+    await assertFails(getDocs(collection(as(null), 'presence')));
   });
 });

@@ -59,6 +59,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Who is online: members see each other; each keeps only their own entry, stamped with the
+    // server time and matching their real role and flat.
+    match /presence/{uid} {
+      allow read: if isMember();
+      allow create, update: if isMember() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'role', 'flatId', 'online', 'lastSeen'])
+        && request.resource.data.lastSeen == request.time
+        && request.resource.data.online is bool
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && request.resource.data.role == profile().role
+        && request.resource.data.get('flatId', null) == profile().get('flatId', null);
+      allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+
     // Append-only activity log.
     match /auditLog/{id} {
       allow read: if isAdmin();

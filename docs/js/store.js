@@ -45,6 +45,19 @@ class FirebaseStore {
     return { id, ...data };
   }
   async remove(col, id) { await this.fb.deleteDoc(this.fb.doc(this.fs, col, id)); }
+
+  // Who is online: lastSeen is stamped by the server so phones with a wrong clock still count.
+  setPresence(uid, data) {
+    return this.fb.setDoc(this.fb.doc(this.fs, 'presence', uid), { ...data, lastSeen: this.fb.serverTimestamp() });
+  }
+  watchPresence(cb) {
+    return this.fb.onSnapshot(this.fb.collection(this.fs, 'presence'),
+      snap => cb(snap.docs.map(d => {
+        const x = d.data({ serverTimestamps: 'estimate' });
+        return { id: d.id, ...x, lastSeen: x.lastSeen?.toMillis?.() || 0 };
+      })),
+      () => cb(null));   // rules not published yet, or signed out: hide the strip
+  }
   async upload(file) {
     if (file.size > MAX_RECEIPT) throw new Error('Receipts must be under 5 MB.');
     const path = `receipts/${newId()}-${file.name.replace(/[^\w.-]/g, '_')}`;
@@ -81,6 +94,21 @@ class DemoStore {
   async get(col, id) { const d = this.db[col]?.[id]; return d ? structuredClone(d) : null; }
   async put(col, doc) { const d = { ...doc, id: doc.id || newId() }; this._set(col, d); return d; }
   async remove(col, id) { delete this.db[col]?.[id]; }
+
+  // Sample people in demo-data.json "presence" are always online, alongside whoever is viewing.
+  async setPresence(uid, data) {
+    this._set('presence', { ...data, id: uid, lastSeen: Date.now() });
+    this._emitPresence();
+  }
+  watchPresence(cb) {
+    this.presenceCb = cb;
+    this._emitPresence();
+    return () => { if (this.presenceCb === cb) this.presenceCb = null; };
+  }
+  _emitPresence() {
+    const now = Date.now();
+    this.presenceCb?.(Object.values(this.db.presence || {}).map(p => ({ ...p, lastSeen: p.lastSeen ?? now })));
+  }
   async upload(file) {
     if (file.size > MAX_RECEIPT) throw new Error('Receipts must be under 5 MB.');
     return { name: file.name, url: URL.createObjectURL(file) };

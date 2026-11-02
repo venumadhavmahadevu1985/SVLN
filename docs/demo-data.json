@@ -18,6 +18,10 @@
     }
   ],
   "collections": {
+    "presence": [
+      { "id": "demo-201", "name": "Owner 201 (demo)", "role": "resident", "flatId": "201", "online": true },
+      { "id": "demo-101", "name": "Flat 101 resident (demo)", "role": "resident", "flatId": "101", "online": true }
+    ],
     "public": [
       {
         "id": "info",
