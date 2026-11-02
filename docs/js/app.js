@@ -1166,6 +1166,42 @@ function taxTable() {
     <tbody>${rows || `<tr><td colspan="6">${empty('No flats yet.')}</td></tr>`}</tbody></table></div></div>`;
 }
 
+// Rename (or merge) an expense category everywhere it is used: expenses, staff salary category and
+// the Settings list. Renaming to a category that already exists merges the two.
+function renameCategoryCard() {
+  const counts = {};
+  for (const e of S.db.expenses) counts[e.category] = (counts[e.category] || 0) + 1;
+  const cats = categoryList().slice().sort((a, b) => a.localeCompare(b));
+  if (!cats.length) return '';
+  return `<form class="card stack" data-form="renameCategory">
+    <h2>Rename a category</h2>
+    <p class="hint">Fixes a wrongly typed category on every expense at once (and on staff salaries and the list above). Pick a category that already exists to merge the two.</p>
+    <div class="form-grid">
+      <label class="field"><span>Category</span><select name="from" required><option value="">Choose…</option>
+        ${cats.map(c => `<option value="${esc(c)}">${esc(c)} (${counts[c] || 0} expense${counts[c] === 1 ? '' : 's'})</option>`).join('')}</select></label>
+      <label class="field"><span>New name</span><input name="to" required maxlength="60" list="renameCatList" placeholder="Type or pick a category"></label>
+      ${datalist('renameCatList', cats)}
+    </div>
+    <div><button class="btn primary">Rename</button></div>
+  </form>`;
+}
+
+async function renameCategory(from, to) {
+  if (!from) throw new Error('Choose the category to rename.');
+  if (!to) throw new Error('Type the new name.');
+  if (to === from) throw new Error('The new name is the same as the old one.');
+  const now = new Date().toISOString(), stamp = { updatedAt: now, updatedBy: S.user.name };
+  const exps = S.db.expenses.filter(e => e.category === from);
+  for (const e of exps) await store.put('expenses', { ...e, category: to, ...stamp });
+  const staff = S.db.vendors.filter(v => v.category === from);
+  for (const v of staff) await store.put('vendors', { ...v, category: to, ...stamp });
+  const list = S.settings.categories || [];
+  if (list.includes(from)) await saveSettings({ categories: uniq(list.map(c => c === from ? to : c)) }, `Category renamed: ${from} → ${to}`);
+  await audit('update', 'expenses', 'category', `Category “${from}” renamed to “${to}” on ${exps.length} expense${exps.length === 1 ? '' : 's'}${staff.length ? ` and ${staff.length} staff` : ''}`);
+  if (S.ui.exp.category === from) S.ui.exp.category = 'all';
+  await refresh(`Renamed on ${exps.length} expense${exps.length === 1 ? '' : 's'}`);
+}
+
 function houseTaxSettings() {
   const due = S.settings.houseTaxDue || [], row = (i, label) => {
     const d = due[i] || {};
@@ -1724,6 +1760,7 @@ function viewSettings() {
       <div class="form-grid">${societyFields(S.settings)}</div>
       <div><button class="btn primary">Save</button></div>
     </form>
+    ${renameCategoryCard()}
     ${houseTaxSettings()}
     ${membersCard()}
     <div class="card">
@@ -2060,6 +2097,9 @@ const FORMS = {
   async settings(fd) {
     await saveSettings(societyPatch(fd), 'Society settings updated');
     await refresh('Settings saved');
+  },
+  async renameCategory(fd) {
+    await renameCategory(String(fd.get('from') || ''), String(fd.get('to') || '').trim());
   },
   async houseTax(fd) {
     const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));
