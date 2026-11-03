@@ -105,6 +105,66 @@ test.describe('House tax · resident', () => {
   });
 });
 
+test.describe('House tax · Pay online (GVMC)', () => {
+  const GVMC = 'https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp';
+  test.beforeEach(async ({ app, context }) => {
+    // Never reach the real payment site from tests.
+    await context.route('https://pgi.billdesk.com/**', r => r.fulfill({ contentType: 'text/html', body: '<title>GVMC (test stub)</title>' }));
+    await context.route('https://example.org/**', r => r.fulfill({ contentType: 'text/html', body: '<title>stub</title>' }));
+    await app.open('dashboard', RESIDENT);
+    await app.go('dues');
+  });
+
+  test('copies the assessment number and opens the GVMC payment page in a new tab', async ({ app, page }) => {
+    const pay = card(page).getByRole('link', { name: 'Pay online' });
+    await expect(pay).toHaveAttribute('href', GVMC);
+    await expect(pay).toHaveAttribute('target', '_blank');
+    await expect(card(page)).toContainText('Copies your assessment number — paste it on the payment page.');
+    const popup = page.waitForEvent('popup');
+    await pay.click();
+    const tab = await popup;
+    await expect(tab).toHaveURL(GVMC);
+    await tab.close();
+    await app.expectToast('Assessment number DEMO-1074-0302 copied — paste it on the payment page');
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
+  });
+
+  test('without an assessment number it asks for one first and copies nothing', async ({ app, page }) => {
+    await card(page).getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Assessment number').fill('');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    const pay = card(page).getByRole('link', { name: 'Pay online' });
+    await expect(pay).not.toHaveAttribute('data-copy');
+    await expect(card(page)).toContainText('Add your assessment number first');
+  });
+
+  test('the treasurer can change the link or clear it to hide the button', async ({ app, page }) => {
+    await app.viewAs('demo-admin');
+    await app.go('settings');
+    const form = page.locator('form[data-form="houseTax"]'), link = form.locator('input[name="houseTaxPayUrl"]');
+    await expect(link).toHaveValue(GVMC);
+    await link.fill('http://insecure.example.org/pay');
+    await form.getByRole('button', { name: 'Save' }).click();
+    await app.expectToast('The payment link must start with https://');
+    await link.fill('https://example.org/pay-tax');
+    await form.getByRole('button', { name: 'Save' }).click();
+    await app.expectToast('House tax settings saved');
+    await app.viewAs(RESIDENT);
+    await app.go('dues');
+    await expect(card(page).getByRole('link', { name: 'Pay online' })).toHaveAttribute('href', 'https://example.org/pay-tax');
+
+    await app.viewAs('demo-admin');
+    await app.go('settings');
+    await link.fill('');
+    await form.getByRole('button', { name: 'Save' }).click();
+    await app.expectToast('House tax settings saved');
+    await app.viewAs(RESIDENT);
+    await app.go('dues');
+    await expect(card(page).getByRole('link', { name: 'Pay online' })).toHaveCount(0);
+  });
+});
+
 test.describe('House tax · treasurer', () => {
   test('Home shows how many flats still owe; it opens the House tax tab', async ({ app }) => {
     await app.open();

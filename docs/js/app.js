@@ -993,6 +993,10 @@ function flatDetailsCard(f) {
 // Due dates come from Settings (two half-years); reminders count from the month tracking started.
 const TAX_DOC_MAX = 650 * 1024;   // PDFs; photos are shrunk to fit a Firestore document
 const taxDueDays = () => Number(S.settings.houseTaxRemindDays) || 30;
+// GVMC's online payment page (BillDesk) until the treasurer changes or clears it in Settings.
+// It can't be pre-filled from a link, so Pay online copies the assessment number to paste there.
+const DEFAULT_TAX_PAY_URL = 'https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp';
+const taxPayUrl = () => typeof S.settings.houseTaxPayUrl === 'string' ? S.settings.houseTaxPayUrl : DEFAULT_TAX_PAY_URL;
 
 function taxDues() {
   const list = (S.settings.houseTaxDue || []).filter(d => d.month && d.day), out = [];
@@ -1039,6 +1043,9 @@ function houseTaxCard(f) {
         <button type="button" class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Edit' : 'Mark paid'}</button></div>`;
     }).join('')}</div>`
       : `<p class="hint">${isAdmin() ? 'Set the house tax due dates in Settings to turn on reminders.' : 'The treasurer has not set the house tax due dates yet.'}</p>`}
+    ${taxPayUrl() ? `<div class="tax-pay">
+      <a class="btn primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay online</span></a>
+      <small class="muted">${p.taxAssessmentNo ? 'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.' : 'Add your assessment number first; you will need it on the payment page.'}</small></div>` : ''}
     <p class="hint">Visible only to this flat and the treasurer.</p>
   </div>`;
 }
@@ -1218,7 +1225,9 @@ function houseTaxSettings() {
     <h2>House tax</h2>
     <p class="hint">Each flat pays its own house tax in two half-yearly instalments. Set the last date to pay each one; flats see a reminder on Home before it is due.</p>
     <div class="form-grid">${row(0, '1st half-year')}${row(1, '2nd half-year')}
-      <label class="field"><span>Remind this many days before</span><input type="number" name="houseTaxRemindDays" min="1" max="120" value="${esc(taxDueDays())}"></label></div>
+      <label class="field"><span>Remind this many days before</span><input type="number" name="houseTaxRemindDays" min="1" max="120" value="${esc(taxDueDays())}"></label>
+      <label class="field span2"><span>Online payment link</span><input type="url" name="houseTaxPayUrl" maxlength="300" value="${esc(taxPayUrl())}" placeholder="https://…">
+        <small class="muted">Opens when a flat taps Pay online. Leave empty to hide the button.</small></label></div>
     <div><button class="btn primary">Save</button></div>
   </form>`;
 }
@@ -2113,7 +2122,9 @@ const FORMS = {
       if (!d.month !== !d.day) throw new Error(`Set both the month and the day for the ${d.label}, or neither.`);
       if (d.day > 31) throw new Error('Due day must be between 1 and 31.');
     }
-    await saveSettings({ houseTaxDue: houseTaxDue.filter(d => d.month), houseTaxRemindDays: Number(fd.get('houseTaxRemindDays')) || 30 }, 'House tax due dates updated');
+    const houseTaxPayUrl = String(fd.get('houseTaxPayUrl') || '').trim();
+    if (houseTaxPayUrl && !/^https:\/\/\S+$/.test(houseTaxPayUrl)) throw new Error('The payment link must start with https://');
+    await saveSettings({ houseTaxDue: houseTaxDue.filter(d => d.month), houseTaxRemindDays: Number(fd.get('houseTaxRemindDays')) || 30, houseTaxPayUrl }, 'House tax due dates updated');
     await refresh('House tax settings saved');
   },
   async setup(fd) {
@@ -2158,6 +2169,13 @@ const CHANGES = {
 };
 
 function bindEvents() {
+  // Links that copy something first (Pay online copies the assessment number); the link still opens.
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-copy]');
+    if (!a || !navigator.clipboard) return;
+    navigator.clipboard.writeText(a.dataset.copy)
+      .then(() => toast(`Assessment number ${a.dataset.copy} copied — paste it on the payment page`)).catch(() => {});
+  });
   document.addEventListener('click', async e => {
     const el = e.target.closest('[data-action]');
     if (!el) return;

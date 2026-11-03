@@ -556,3 +556,5 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
 @media (max-width: 360px) { .brand > span { display: none; } }
 .topbar-right { flex: 0 0 auto; }
 @media (max-width: 480px) { .topbar:has(#demoAccount) .brand > span { display: none; } }
+.house-tax .tax-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; }
+.house-tax .tax-pay small { flex: 1 1 200px; }
