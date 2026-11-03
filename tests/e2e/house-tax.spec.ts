@@ -54,6 +54,44 @@ test.describe('House tax · resident', () => {
     await expect(card(app.page)).toBeVisible();
   });
 
+  test('My flat shows the courtesy reminder while tax is due, with Pay now and Mark paid', async ({ app, page, context }) => {
+    await context.route('https://pgi.billdesk.com/**', r => r.fulfill({ contentType: 'text/html', body: '<title>stub</title>' }));
+    await app.go('dues');
+    const notice = card(page).locator('.tax-notice');
+    await expect(notice).toHaveCount(1);
+    await expect(notice).toHaveClass(/warn/);
+    await expect(notice.locator('strong')).toHaveText('Courtesy reminder');
+    await expect(notice).toContainText('This is a courtesy reminder: house tax for 2nd half-year is due on 15 Nov 2026.');
+    await expect(notice.locator('.tax-facts span')).toHaveText(['Assessment No: DEMO-1074-0302', 'Taxpayer: Owner 302 (demo)', 'Due amount: ₹1,700']);
+    await expect(notice).toContainText('Please ignore if already paid. Thank you!');
+
+    const popup = page.waitForEvent('popup');
+    await notice.getByRole('link', { name: 'Pay now' }).click();
+    await (await popup).close();
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
+
+    await notice.getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Amount (₹)')).toHaveValue('1700');
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(card(page).locator('.tax-notice')).toHaveCount(0);
+  });
+
+  test('the reminder turns red once overdue and says it was due', async ({ app, page }) => {
+    await app.viewAs('demo-admin');
+    await app.go('settings');
+    const form = page.locator('form[data-form="houseTax"]');
+    await form.locator('select[name="taxMonth1"]').selectOption('10');
+    await form.locator('input[name="taxDay1"]').fill('1');
+    await form.getByRole('button', { name: 'Save' }).click();
+    await app.expectToast('House tax settings saved');
+    await app.viewAs(RESIDENT);
+    await app.go('dues');
+    const notice = card(page).locator('.tax-notice');
+    await expect(notice).toHaveClass(/bad/);
+    await expect(notice).toContainText('house tax for 2nd half-year was due on 1 Oct 2026.');
+  });
+
   test('My flat shows the assessment number and each instalment', async ({ app }) => {
     await app.go('dues');
     await expect(card(app.page).locator('dd').first()).toHaveText('DEMO-1074-0302');

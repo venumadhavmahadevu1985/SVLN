@@ -104,7 +104,9 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
-  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Pay now': 'ఇప్పుడే చెల్లించండి', 'WhatsApp reminder': 'వాట్సాప్ రిమైండర్',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Courtesy reminder': 'మర్యాదపూర్వక రిమైండర్',
+  'Please pay online, then tap Mark paid. Please ignore if already paid. Thank you!':
+    'దయచేసి ఆన్‌లైన్‌లో చెల్లించి, తర్వాత “చెల్లించినట్లు గుర్తించండి” నొక్కండి. ఇప్పటికే చెల్లించి ఉంటే పట్టించుకోకండి. ధన్యవాదాలు!', 'Pay now': 'ఇప్పుడే చెల్లించండి', 'WhatsApp reminder': 'వాట్సాప్ రిమైండర్',
   'Send a courtesy reminder on WhatsApp': 'వాట్సాప్‌లో మర్యాదపూర్వక రిమైండర్ పంపండి', 'tap to mark it paid': 'చెల్లించినట్లు గుర్తించడానికి నొక్కండి',
   'Taxpayer name': 'పన్ను చెల్లింపుదారు పేరు', 'Taxpayer name (as on the GVMC bill)': 'పన్ను చెల్లింపుదారు పేరు (GVMC బిల్లుపై ఉన్నట్లు)',
   'Owner name printed on the tax bill': 'పన్ను బిల్లుపై ఉన్న యజమాని పేరు', 'Due amount': 'చెల్లించాల్సిన మొత్తం', 'Due amount (₹)': 'చెల్లించాల్సిన మొత్తం (₹)', 'Nothing due': 'బకాయి లేదు',
@@ -191,6 +193,11 @@ const t = s => TE[s] || s;
 const PATTERNS = [
   [/^(\d+) (?:people|person) online now$/, (_, n) => `ఇప్పుడు ${n} మంది ఆన్‌లైన్‌లో`],
   [/^Flat (\S+)$/, (_, f) => `ఫ్లాట్ ${f}`],
+  [/^This is a courtesy reminder: house tax for (.+) (is|was) due on (.+)\.$/, (_, l, w, d) =>
+    `ఇది మర్యాదపూర్వక రిమైండర్: ${t(l)} ఇంటి పన్ను ${w === 'was' ? `${d}న గడువు ముగిసింది` : `${d}లోగా చెల్లించాలి`}.`],
+  [/^Assessment No: (.+)$/, (_, n) => `అసెస్‌మెంట్ నం: ${n}`],
+  [/^Taxpayer: (.+)$/, (_, n) => `పన్ను చెల్లింపుదారు: ${n}`],
+  [/^Due amount: (.+)$/, (_, a) => `చెల్లించాల్సిన మొత్తం: ${a}`],
   [/^Assessment number (.+) copied — paste it on the payment page$/, (_, n) => `అసెస్‌మెంట్ నంబర్ ${n} కాపీ అయింది — చెల్లింపు పేజీలో పేస్ట్ చేయండి`],
   [/^\(Flat (\S+)\)$/, (_, f) => `(ఫ్లాట్ ${f})`],
   [/^Flat (\S+): all dues paid$/, (_, f) => `ఫ్లాట్ ${f}: అన్ని బకాయిలు చెల్లించారు`],

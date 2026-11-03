@@ -563,3 +563,10 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .tax-banner .row-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .tax-banner .row-btns .btn span { display: inline; color: inherit; font-size: inherit; }
 .tax-banner .row-btns .btn .ic { margin-top: 0; color: inherit; }
+
+/* Courtesy reminder on My flat → House tax */
+.tax-notice { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; border-left: 4px solid var(--warn); background: var(--warn-soft); }
+.tax-notice.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+.tax-notice p { margin: 6px 0 0; }
+.tax-notice .tax-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 600; }
+.tax-notice .row-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
