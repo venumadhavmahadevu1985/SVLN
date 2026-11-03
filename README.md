@@ -50,6 +50,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
+- **Individual alerts:** the treasurer taps **Alert** on a flat (Dues → Flats & amount, or the House tax table) to show a banner only to that flat, at the top of Home and My flat. It has an optional title, a message, a style (Information / Reminder / Urgent) and an optional **Show until** date. One tap fills in the house tax message, and it can be removed any time. The treasurer's Home lists which flats have an alert on. Stored in `flatAlerts/{flatNo}`; only admins write, and only that flat and admins read.
 - **Usage (admins only):** a page showing visits, people, devices, installed-app use, most-tapped buttons, pages opened, recent visits and a per-person **click log** (Today, 7, 30 or 90 days). Every signed-in member's app opens go to `visits/` and taps to `clicks/` (sent in batches). Residents see a note that this is logged. **Clear entries older than 90 days** keeps it small.
 - **Telugu (తెలుగు):** the **తె** button in the header switches the app to Telugu, and **EN** switches back. Each phone remembers its own choice.
   - Menus, buttons, labels, banners, dialogs and messages are translated (`docs/js/i18n.js`), and month names show in Telugu.
@@ -93,6 +94,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `flats/{flatNo}` | owner, sqft, override |
 | `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
 | `taxDocs/{flatNo}` | name, type, data (data URL under 1 MB) — the house tax bill (private, like flatProfiles) |
+| `flatAlerts/{flatNo}` | title, text (≤500), tone (info / warn / bad), until, at, by |
 | `visits/{id}` | uid, name, flatId, role, at, device, installed, lang, screen (members create their own; admins read/clear) |
 | `clicks/{id}` | uid, name, flatId, role, at, events[] {t, route, label, action} (max 100 per batch; admins read/clear) |
 | `presence/{uid}` | name, role, flatId, online, lastSeen (server time) — who is online now |

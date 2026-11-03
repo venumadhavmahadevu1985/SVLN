@@ -275,3 +275,23 @@ describe('usage log (visits and taps)', () => {
     await assertSucceeds(deleteDoc(doc(as(ADMIN), 'visits/v6')));
   });
 });
+
+describe('individual flat alerts', () => {
+  const alert = (extra = {}) => ({ title: '', text: 'Water off tomorrow', tone: 'warn', until: '', at: 'now', by: 'Treasurer', ...extra });
+  test('admins set and remove alerts; only that flat can read its alert', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'flatAlerts/302'), alert()));
+    await assertSucceeds(getDoc(doc(as(RES), 'flatAlerts/302')));
+    await assertFails(getDoc(doc(as(OTHER), 'flatAlerts/302')));
+    await assertFails(getDoc(doc(as(PENDING), 'flatAlerts/302')));
+    await assertSucceeds(deleteDoc(doc(as(ADMIN), 'flatAlerts/302')));
+  });
+  test('residents cannot set, change or remove alerts; bad values are refused', async () => {
+    await assertFails(setDoc(doc(as(RES), 'flatAlerts/302'), alert()));
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'flatAlerts/302'), alert()));
+    await assertFails(updateDoc(doc(as(RES), 'flatAlerts/302'), { text: 'changed' }));
+    await assertFails(deleteDoc(doc(as(RES), 'flatAlerts/302')));
+    await assertFails(setDoc(doc(as(ADMIN), 'flatAlerts/101'), alert({ text: 'x'.repeat(501) })));
+    await assertFails(setDoc(doc(as(ADMIN), 'flatAlerts/101'), alert({ tone: 'party' })));
+    await assertFails(setDoc(doc(as(ADMIN), 'flatAlerts/101'), alert({ extra: 1 })));
+  });
+});

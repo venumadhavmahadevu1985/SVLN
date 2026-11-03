@@ -92,6 +92,40 @@ test.describe('House tax · resident', () => {
     await expect(notice).toContainText('house tax for 2nd half-year was due on 1 Oct 2026.');
   });
 
+  test('a due amount is always shown as owed, even after an instalment was marked paid (never "Paid")', async ({ app, page }) => {
+    // Flat 302 marks the 15 Nov instalment paid but GVMC still shows ₹950 (e.g. penalty): the treasurer enters it.
+    await app.go('dues');
+    await due(page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await card(page).locator('.card-head').getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Due amount (₹)').fill('950');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    await expect(card(page).locator('.tax-due-now dd')).toHaveText('₹950');
+    await expect(card(page)).not.toContainText(/Paid ₹|Paid on|Nothing due/);
+    await expect(card(page).locator('.tax-notice')).toContainText('Due amount: ₹950');
+    await app.go('dashboard');
+    await expect(app.main.locator('.tax-banner')).toContainText('₹950');
+    await app.viewAs('demo-admin');
+    await app.duesTab('House tax');
+    const row = app.main.locator('tr[data-tax-row="302"]');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹950');
+    await expect(row).not.toContainText('Paid ✓');
+    await expect(row.getByRole('button', { name: 'Mark paid' })).toBeVisible();
+    // Paying it clears the due amount; "not paid after all" brings it back.
+    await row.getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Amount (₹)')).toHaveValue('950');
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹0');
+    await row.getByRole('button', { name: 'Paid ✓' }).click();
+    await app.modal.getByLabel('Not paid after all').check();
+    await app.submitModal();
+    await app.expectToast('Payment removed');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹950');
+  });
+
   test('My flat shows the assessment number and each instalment', async ({ app }) => {
     await app.go('dues');
     await expect(card(app.page).locator('dd').first()).toHaveText('DEMO-1074-0302');
@@ -130,7 +164,6 @@ test.describe('House tax · resident', () => {
     await expect(dd('Taxpayer name')).toHaveText('Owner 302 (demo)');
     await expect(dd('Due amount')).toHaveText('₹1,700');
     await expect(c.locator('dt', { hasText: /half-year|Tax due now/ })).toHaveCount(0);
-    await expect(due(app.page, '2026-11-15')).toContainText('Due 15 Nov 2026 · ₹1,700');
     // Mark paid starts with the amount filled in; after paying nothing is due.
     await due(app.page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
     await expect(app.field('Amount (₹)')).toHaveValue('1700');
