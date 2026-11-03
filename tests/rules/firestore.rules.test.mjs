@@ -295,3 +295,13 @@ describe('individual flat alerts', () => {
     await assertFails(setDoc(doc(as(ADMIN), 'flatAlerts/101'), alert({ extra: 1 })));
   });
 });
+
+describe('house tax penalty', () => {
+  test('a resident can save a penalty amount; bad values are refused', async () => {
+    const db = as(RES);
+    await assertSucceeds(updateDoc(doc(db, 'flatProfiles/302'), { taxAmount: 1700, taxPenalty: 300 }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPenalty: -1 }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPenalty: '300' }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPenalty: 1000001 }));
+  });
+});

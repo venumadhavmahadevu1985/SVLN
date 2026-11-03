@@ -36,6 +36,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
   - **Residents** see a reminder on Home (red once overdue) and a House tax card on My flat with **Mark paid**.
   - **Residents' Home reminder** has **Pay now** (copies the assessment number and opens the GVMC link), **Mark paid** and **Details**. While something is due, the House tax card is the first card on My flat.
   - **The treasurer** sees "N of 8 flats not marked paid" on Home and a **Dues → House tax** tab listing every flat, with Mark paid and a **WhatsApp reminder**. That is a courtesy message with the due date, assessment number, taxpayer, due amount, the GVMC pay link and a link to the flat's own page in the app.
+  - **Penalty added by GVMC (₹)** is kept apart from the tax. My flat shows **Tax due**, **Penalty** (red) and **Total due** boxes; the treasurer's table has a **Penalty** column; reminders and WhatsApp list tax, penalty and total. Mark paid fills in the total and clears both.
   - **Pay online** copies the flat's assessment number and opens GVMC's payment page (BillDesk `GVMCDetails.jsp`), where the owner pastes it. That page can't be pre-filled from a link. After paying, the owner taps Mark paid. The link is `houseTaxPayUrl` in Settings → House tax (GVMC by default; empty hides the button).
   - Photos are shrunk to a JPEG and saved in `taxDocs/{flatNo}` (PDFs up to 650 KB), so no paid storage is needed.
 - **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
@@ -92,7 +93,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[], quickExpenses[], houseTaxDue[] {label, month, day}, houseTaxRemindDays, houseTaxPayUrl |
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
 | `flats/{flatNo}` | owner, sqft, override |
-| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
+| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxPenalty, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
 | `taxDocs/{flatNo}` | name, type, data (data URL under 1 MB) — the house tax bill (private, like flatProfiles) |
 | `flatAlerts/{flatNo}` | title, text (≤500), tone (info / warn / bad), until, at, by |
 | `visits/{id}` | uid, name, flatId, role, at, device, installed, lang, screen (members create their own; admins read/clear) |
