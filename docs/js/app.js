@@ -1029,17 +1029,40 @@ const taxFocus = flatId => taxReminders(flatId)[0] || taxDues().find(d => d.date
 const taxAmount = flatId => Number(S.db.flatProfiles[flatId]?.taxAmount) || 0;
 const taxAmountText = flatId => taxAmount(flatId) ? money(taxAmount(flatId)) : '';
 
-// Courtesy reminder for WhatsApp: what is due, the GVMC pay link, and a link to the flat's own page.
-function taxReminderText(f, d) {
-  const p = S.db.flatProfiles[f.id] || {}, who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
-  const n = daysUntil(d.date), when = n < 0 ? `was due on ${dateLabel(d.date)}` : `is due on ${dateLabel(d.date)}`;
+// Courtesy reminder: the same wording on WhatsApp and on the flat's own page.
+const taxReminderLine = d => `This is a courtesy reminder: house tax for ${d.label} ${daysUntil(d.date) < 0 ? 'was' : 'is'} due on ${dateLabel(d.date)}.`;
+const taxFacts = f => {
+  const p = S.db.flatProfiles[f.id] || {};
   return [
-    `Namaste ${who} 🙏`,
-    `This is a courtesy reminder: house tax for ${d.label} ${when}.`,
-    '',
     ...(p.taxAssessmentNo ? [`Assessment No: ${p.taxAssessmentNo}`] : []),
     ...(p.taxOwnerName ? [`Taxpayer: ${p.taxOwnerName}`] : []),
     ...(taxAmount(f.id) ? [`Due amount: ${money(taxAmount(f.id))}`] : []),
+  ];
+};
+
+// Shown at the top of the House tax card on My flat while an instalment is due or overdue.
+function taxNotice(f, d) {
+  const p = S.db.flatProfiles[f.id] || {}, overdue = daysUntil(d.date) < 0;
+  return `<div class="tax-notice ${overdue ? 'bad' : 'warn'}" role="note" data-tax-notice="${d.date}">
+    <strong>Courtesy reminder</strong>
+    <p>${esc(taxReminderLine(d))}</p>
+    ${taxFacts(f).length ? `<p class="tax-facts">${taxFacts(f).map(x => `<span>${esc(x)}</span>`).join('')}</p>` : ''}
+    <p class="muted">Please pay online, then tap Mark paid. Please ignore if already paid. Thank you!</p>
+    <div class="row-btns">
+      ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
+      <button type="button" class="btn sm ghost" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">Mark paid</button>
+    </div></div>`;
+}
+
+// Courtesy reminder for WhatsApp: what is due, the GVMC pay link, and a link to the flat's own page.
+function taxReminderText(f, d) {
+  const who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  const p = S.db.flatProfiles[f.id] || {};
+  return [
+    `Namaste ${who} 🙏`,
+    taxReminderLine(d),
+    '',
+    ...taxFacts(f),
     '',
     ...(taxPayUrl() ? [`Pay online (GVMC): ${taxPayUrl()}`, p.taxAssessmentNo ? 'Enter the assessment number above on that page.' : 'Keep your assessment number ready.'] : []),
     `Your flat details, Pay and Mark paid in the SVLN app: ${siteLink()}#/dues`,
@@ -1054,6 +1077,7 @@ function houseTaxCard(f) {
   return `<div class="card house-tax">
     <div class="card-head"><h2>House tax</h2>
       <button class="btn sm ${p.taxAssessmentNo ? 'ghost' : 'primary'}" data-action="edit-tax" data-id="${esc(f.id)}">${p.taxAssessmentNo || p.taxDoc ? 'Edit' : 'Add assessment number'}</button></div>
+    ${owing.map(d => taxNotice(f, d)).join('')}
     <dl class="details">
       <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo, 'strong') : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Taxpayer name</dt><dd>${p.taxOwnerName ? esc(p.taxOwnerName) : '<span class="muted">Not added yet</span>'}</dd></div>

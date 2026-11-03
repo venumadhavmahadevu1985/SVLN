@@ -61,6 +61,11 @@ test.describe('Telugu language option', () => {
     await expect(occ.locator('option')).toHaveText(['యజమాని', 'అద్దెదారు', 'ఖాళీ']);
     await occ.selectOption({ label: 'అద్దెదారు' });
     await expect(occ).toHaveValue('Tenant');
+    await app.page.keyboard.press('Escape');
+    const notice = app.main.locator('.house-tax .tax-notice');
+    await expect(notice.locator('strong')).toHaveText('మర్యాదపూర్వక రిమైండర్');
+    await expect(notice).toContainText('ఇది మర్యాదపూర్వక రిమైండర్: రెండవ అర్ధ సంవత్సరం ఇంటి పన్ను 15 నవం 2026లోగా చెల్లించాలి.');
+    await expect(notice).toContainText('చెల్లించాల్సిన మొత్తం: ₹1,700');
   });
 
   test('approving a member in Telugu saves the English role', async ({ app, page }) => {
