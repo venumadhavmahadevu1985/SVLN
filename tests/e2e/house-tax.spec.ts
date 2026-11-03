@@ -443,3 +443,81 @@ test.describe('House tax · treasurer', () => {
     await expect(card(page)).toContainText('The treasurer has not set the house tax due dates yet.');
   });
 });
+
+test.describe('House tax · penalty added by GVMC', () => {
+  test('penalty shows in its own box and in the totals everywhere; paying clears both', async ({ app, page }) => {
+    await app.open('dues', RESIDENT);
+    const c = page.locator('main .house-tax');
+    await c.locator('.card-head').getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Due amount (₹)').fill('1700');
+    await app.field('Penalty added by GVMC (₹)').fill('300');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+
+    // separate boxes on My flat
+    const boxes = c.locator('.tax-amounts .amt-box');
+    await expect(boxes).toHaveCount(3);
+    await expect(boxes.nth(0)).toHaveText(/Tax due\s*₹1,700/);
+    await expect(boxes.nth(1)).toHaveText(/Penalty \(added by GVMC\)\s*₹300/);
+    await expect(boxes.nth(1)).toHaveClass(/penalty/);
+    await expect(boxes.nth(2)).toHaveText(/Total due\s*₹2,000/);
+    await expect(c.locator('.tax-due-now dd')).toHaveText('₹2,000');
+    await expect(c.locator('.tax-notice .tax-facts span')).toHaveText(['Assessment No: DEMO-1074-0302', 'Taxpayer: Owner 302 (demo)',
+      'Tax due: ₹1,700', 'Penalty (added by GVMC): ₹300', 'Total due: ₹2,000']);
+    // Home reminder
+    await app.go('dashboard');
+    await expect(app.main.locator('.tax-banner')).toContainText('₹2,000 incl. ₹300 penalty');
+
+    // treasurer: Due amount and Penalty columns, WhatsApp lines, alert text
+    await app.viewAs('demo-admin');
+    await app.duesTab('House tax');
+    const row = app.main.locator('tr[data-tax-row="302"]');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹2,000');
+    await expect(row.locator('td.tax-penalty-cell')).toHaveText('₹300');
+    await expect(app.main.locator('tr[data-tax-row="201"] td.tax-penalty-cell')).toHaveText('—');
+    await expect(app.main.locator('.tax-banner')).toHaveCount(0);             // banners are on Home
+    await app.go('dashboard');
+    await expect(app.main.locator('.tax-banner')).toContainText('₹2,000 still to pay');
+
+    // Mark paid fills in the total and clears tax and penalty; undo brings both back
+    await app.duesTab('House tax');
+    await row.getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Amount (₹)')).toHaveValue('2000');
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹0');
+    await expect(row.locator('td.tax-penalty-cell')).toHaveText('—');
+    await row.getByRole('button', { name: 'Paid ✓' }).click();
+    await app.modal.getByLabel('Not paid after all').check();
+    await app.submitModal();
+    await app.expectToast('Payment removed');
+    await expect(row.locator('td.tax-due-cell')).toHaveText('₹2,000');
+    await expect(row.locator('td.tax-penalty-cell')).toHaveText('₹300');
+  });
+
+  test('the WhatsApp reminder lists tax, penalty and total', async ({ app, page }) => {
+    await app.open();
+    await app.duesTab('House tax');
+    await app.main.locator('tr[data-tax-row="201"]').getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Due amount (₹)').fill('1850');
+    await app.field('Penalty added by GVMC (₹)').fill('185');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    const remind = app.main.locator('tr[data-tax-row="201"]').getByRole('link', { name: 'WhatsApp reminder' });
+    const lines = decodeURIComponent((await remind.getAttribute('href'))!.split('text=')[1]).split('\n');
+    expect(lines).toEqual(expect.arrayContaining(['Tax due: ₹1,850', 'Penalty (added by GVMC): ₹185', 'Total due: ₹2,035']));
+    expect(lines.some(l => l.startsWith('Due amount:'))).toBe(false);
+  });
+
+  test('penalty boxes fit a 320 px phone', async ({ app, page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await app.open('dues', RESIDENT);
+    await page.locator('main .house-tax .card-head').getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Penalty added by GVMC (₹)').fill('12500');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    const overflow = await page.evaluate(() => [...document.querySelectorAll('.amt-box')].some(b => b.scrollWidth > b.clientWidth + 1)
+      || document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+    expect(overflow).toBe(false);
+  });
+});
