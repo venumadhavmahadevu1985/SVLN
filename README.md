@@ -34,7 +34,8 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **House tax (per flat):** each flat keeps its **assessment number**, the **taxpayer name** as on the GVMC bill, the **due amount** per instalment (shown as "Due amount" on the card and in reminders, pre-filled in Mark paid), a photo or PDF of the **tax bill**, and **paid** status for each half-yearly instalment (paid on, amount, receipt number).
   - **Settings → House tax** sets the two due dates and how many days before to remind (default 30). Reminders count from the month tracking started.
   - **Residents** see a reminder on Home (red once overdue) and a House tax card on My flat with **Mark paid**.
-  - **The treasurer** sees "N of 8 flats not marked paid" on Home and a **Dues → House tax** tab listing every flat, with Mark paid and a WhatsApp **Remind**.
+  - **Residents' Home reminder** has **Pay now** (copies the assessment number and opens the GVMC link), **Mark paid** and **Details**. While something is due, the House tax card is the first card on My flat.
+  - **The treasurer** sees "N of 8 flats not marked paid" on Home and a **Dues → House tax** tab listing every flat, with Mark paid and a **WhatsApp reminder**. That is a courtesy message with the due date, assessment number, taxpayer, due amount, the GVMC pay link and a link to the flat's own page in the app.
   - **Pay online** copies the flat's assessment number and opens GVMC's payment page (BillDesk `GVMCDetails.jsp`), where the owner pastes it. That page can't be pre-filled from a link. After paying, the owner taps Mark paid. The link is `houseTaxPayUrl` in Settings → House tax (GVMC by default; empty hides the button).
   - Photos are shrunk to a JPEG and saved in `taxDocs/{flatNo}` (PDFs up to 650 KB), so no paid storage is needed.
 - **Expenses:** add, edit and delete expenses with a receipt photo or PDF. Filter, search, sort, and export to CSV.
