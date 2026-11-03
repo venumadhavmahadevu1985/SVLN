@@ -104,7 +104,11 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
-  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Copy and open the payment page': 'కాపీ చేసి చెల్లింపు పేజీ తెరవండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'tap to mark it paid': 'చెల్లించినట్లు గుర్తించడానికి నొక్కండి',
+  'Taxpayer name': 'పన్ను చెల్లింపుదారు పేరు', 'Taxpayer name (as on the GVMC bill)': 'పన్ను చెల్లింపుదారు పేరు (GVMC బిల్లుపై ఉన్నట్లు)',
+  'Owner name printed on the tax bill': 'పన్ను బిల్లుపై ఉన్న యజమాని పేరు', 'Tax per half-year': 'అర్ధ సంవత్సరానికి పన్ను',
+  'Tax per half-year (₹)': 'అర్ధ సంవత్సరానికి పన్ను (₹)', 'Tax due now': 'ఇప్పుడు చెల్లించాల్సిన పన్ను', 'Nothing due': 'బకాయి లేదు',
+  'Enter the tax amount in rupees (0 to 10,00,000).': 'పన్ను మొత్తాన్ని రూపాయల్లో ఇవ్వండి (0 నుండి 10,00,000).', 'Copy and open the payment page': 'కాపీ చేసి చెల్లింపు పేజీ తెరవండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
   'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.':
     'మీ అసెస్‌మెంట్ నంబర్ కాపీ అవుతుంది — చెల్లింపు పేజీలో పేస్ట్ చేయండి. చెల్లించిన తర్వాత ఇక్కడికి వచ్చి “చెల్లించినట్లు గుర్తించండి” నొక్కండి.',
   'Add your assessment number first; you will need it on the payment page.': 'ముందుగా మీ అసెస్‌మెంట్ నంబర్ జోడించండి; చెల్లింపు పేజీలో అది అవసరం.',
@@ -200,15 +204,16 @@ const PATTERNS = [
   [/^Paid (₹[\d,]+ )?on (.+)$/, (_, a, d) => `${d}న ${a || ''}చెల్లించారు`],
   [/^Due (\d.+)$/, (_, d) => `గడువు ${d}`],
   [/^(₹[\d,.]+(?:\/sq\. ft\.)?) per flat each month · due by the (\d+)\w\w$/, (_, a, d) => `ప్రతి నెల ఒక్కో ఫ్లాట్‌కు ${a} · ప్రతి నెల ${d}వ తేదీలోగా`],
-  [/^(.+) · due (\d.+?) · Flats (.+)$/, (_, l, d, f) => `${t(l)} · గడువు ${d} · ఫ్లాట్లు ${f}`],
-  [/^(.+) · due (\d.+)$/, (_, l, d) => `${t(l)} · గడువు ${d}`],
+  [/^due (\d.+)$/, (_, d) => `గడువు ${d}`],
+  [/^Flats (\d.*)$/, (_, f) => `ఫ్లాట్లు ${f}`],
+  [/^(₹[\d,]+) still to pay$/, (_, a) => `ఇంకా ${a} చెల్లించాలి`],
+  [/^Assessment No\. (.+)$/, (_, no) => `అసెస్‌మెంట్ నం. ${no}`],
+  [/^(\d+) instalments? due — add the amount$/, (_, n) => `${n} వాయిదా(లు) బకాయి — మొత్తం జోడించండి`],
   [/^House tax due in (\d+) days? · (.+)$/, (_, n, d) => `ఇంటి పన్ను ${n} రోజుల్లో గడువు · ${d}`],
   [/^House tax due today$/, () => 'ఇంటి పన్ను గడువు ఈరోజే'],
   [/^House tax overdue · was due (.+)$/, (_, d) => `ఇంటి పన్ను గడువు దాటింది · గడువు ${d}`],
   [/^House tax (?:due in (\d+) days?|overdue|due today): (\d+) of (\d+) flats not marked paid$/, (m, n, a, b) =>
     `ఇంటి పన్ను ${n ? `${n} రోజుల్లో గడువు` : m.includes('overdue') ? 'గడువు దాటింది' : 'గడువు ఈరోజే'}: ${b} ఫ్లాట్లలో ${a} చెల్లించినట్లు గుర్తించలేదు`],
-  [/^(.+) · Assessment No\. (.+) · tap to mark it paid$/, (_, l, no) => `${t(l)} · అసెస్‌మెంట్ నం. ${no} · చెల్లించినట్లు గుర్తించడానికి నొక్కండి`],
-  [/^(.+) · tap to mark it paid$/, (_, l) => `${t(l)} · చెల్లించినట్లు గుర్తించడానికి నొక్కండి`],
   [/^Reminders start (\d+) days before each due date$/, (_, n) => `ప్రతి గడువుకు ${n} రోజుల ముందు రిమైండర్లు మొదలవుతాయి`],
   [/^✓ Paid (₹[\d,]+) · (.+)$/, (_, a, d) => `✓ ${a} చెల్లించారు · ${d}`],
   [/^(.+) · tap to add$/, (_, m) => `${m} · జోడించడానికి నొక్కండి`],
@@ -264,6 +269,10 @@ export function translate(text) {
   if (!core || !/[A-Za-z]/.test(core)) return null;
   let out = TE[core];
   if (out === undefined) for (const [re, fn] of PATTERNS) { const m = core.match(re); if (m) { out = fn(...m); break; } }
+  if (out === undefined && core.includes(' · ')) {
+    const parts = core.split(' · ').map(x => translate(x) ?? x);
+    out = parts.join(' · ');
+  }
   out = months(out ?? core);
   return out === core ? null : text.replace(core, out);
 }

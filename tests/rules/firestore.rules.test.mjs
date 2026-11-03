@@ -216,7 +216,7 @@ describe('house tax', () => {
   test('a resident keeps their own assessment number, paid status and bill', async () => {
     const db = as(RES);
     await assertSucceeds(updateDoc(doc(db, 'flatProfiles/302'), {
-      taxAssessmentNo: '1074/22/0302', taxDoc: { name: 'bill.jpg', type: 'image/jpeg' },
+      taxAssessmentNo: '1074/22/0302', taxOwnerName: 'K. Lakshmi', taxAmount: 2140, taxDoc: { name: 'bill.jpg', type: 'image/jpeg' },
       taxPaid: { '2026-11-15': { paidOn: '2026-11-05', amount: 1900 } } }));
     await assertSucceeds(setDoc(doc(db, 'taxDocs/302'), bill()));
     await assertSucceeds(getDoc(doc(db, 'taxDocs/302')));
@@ -233,6 +233,9 @@ describe('house tax', () => {
     const db = as(RES);
     await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxAssessmentNo: 'x'.repeat(41) }));
     await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxPaid: 'yes' }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxAmount: -5 }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxAmount: '1700' }));
+    await assertFails(updateDoc(doc(db, 'flatProfiles/302'), { taxOwnerName: 'x'.repeat(101) }));
     await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ data: 'x'.repeat(1000000) })));
     await assertFails(setDoc(doc(db, 'taxDocs/302'), bill({ owner: 'x' })));
   });
