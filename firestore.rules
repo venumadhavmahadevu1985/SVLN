@@ -80,6 +80,8 @@ service cloud.firestore {
     match /vendors/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
     match /notices/{id}  { allow read: if isMember(); allow write: if isAdmin(); }
     match /meta/{id}     { allow read: if isMember(); allow write: if isAdmin(); }
+    // Split expenses (borewell, painting…): every member sees the shares; only admins set them.
+    match /levies/{id}   { allow read: if isMember(); allow write: if isAdmin(); }
 
     // Residents see only their own flat's payments; monthly totals are in meta/collections.
     match /payments/{id} {

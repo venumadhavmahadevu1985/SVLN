@@ -296,6 +296,28 @@ describe('individual flat alerts', () => {
   });
 });
 
+describe('split expenses', () => {
+  const levy = { title: 'Borewell repair', total: 8000, shares: { '302': 1000 }, instalments: 2, dueDate: '2026-11-10' };
+  test('admins create and delete split expenses; every member can read them', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'levies/l1'), levy));
+    await assertSucceeds(getDoc(doc(as(RES), 'levies/l1')));
+    await assertSucceeds(getDoc(doc(as(OTHER), 'levies/l1')));
+    await assertFails(getDoc(doc(as(PENDING), 'levies/l1')));
+    await assertSucceeds(deleteDoc(doc(as(ADMIN), 'levies/l1')));
+  });
+  test('residents cannot create, change or delete them', async () => {
+    await assertFails(setDoc(doc(as(RES), 'levies/l2'), levy));
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'levies/l2'), levy));
+    await assertFails(updateDoc(doc(as(RES), 'levies/l2'), { shares: { '302': 0 } }));
+    await assertFails(deleteDoc(doc(as(RES), 'levies/l2')));
+  });
+  test('a split-expense payment is private to that flat like any payment', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'payments/lp1'), { flatId: '302', levyId: 'l2', amount: 500, paidOn: '2026-11-04' }));
+    await assertFails(setDoc(doc(as(RES), 'payments/lp2'), { flatId: '302', levyId: 'l2', amount: 500, paidOn: '2026-11-04' }));
+    await assertFails(getDoc(doc(as(OTHER), 'payments/lp1')));
+  });
+});
+
 describe('house tax penalty', () => {
   test('a resident can save a penalty amount; bad values are refused', async () => {
     const db = as(RES);

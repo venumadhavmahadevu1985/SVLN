@@ -19,9 +19,10 @@ const S = {
   user: null,
   info: null,          // public/info: society name + address (readable before sign-in)
   hasSettings: false,
-  db: { flats: [], flatProfiles: {}, flatAlerts: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
+  db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...FALLBACK },
   collections: {},
+  special: {},         // split-expense money received: { 'YYYY-MM': { levyId: amount } }
   route: 'dashboard',
   ui: {
     exp: { q: '', month: 'all', category: 'all', vendor: 'all', sort: 'date-desc' },
@@ -135,9 +136,16 @@ function spentByMonth() {
 // Balance in hand at the end of month mk.
 function balanceThrough(mk) {
   let b = Number(S.settings.openingBalance) || 0;
-  for (const [k, v] of Object.entries(S.collections)) if (k <= mk) b += v;
+  for (const [k, v] of Object.entries(collectedByMonth())) if (k <= mk) b += v;
   for (const [k, v] of Object.entries(spentByMonth())) if (k <= mk) b -= v;
   return b;
+}
+// Maintenance plus split-expense shares received, per month.
+const specialIn = mk => sum(Object.values(S.special[mk] || {}));
+function collectedByMonth() {
+  const m = { ...S.collections };
+  for (const k of Object.keys(S.special)) m[k] = (m[k] || 0) + specialIn(k);
+  return m;
 }
 function categoryTotals(exps) {
   const m = {};
@@ -194,12 +202,14 @@ async function loadData() {
   // Contact details are private: admins load every flat's, residents only their own.
   const profiles = isAdmin() ? await store.list('flatProfiles')
     : S.user.flatId ? [await store.get('flatProfiles', S.user.flatId)].filter(Boolean) : [];
+  const levies = await store.list('levies').catch(() => []);
   const alerts = await (isAdmin() ? store.list('flatAlerts')
     : S.user.flatId ? store.get('flatAlerts', S.user.flatId).then(a => [a].filter(Boolean)) : Promise.resolve([])).catch(() => []);
   S.db = {
     flats: flats.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })),
     flatProfiles: Object.fromEntries(profiles.map(p => [p.id, p])),
     flatAlerts: Object.fromEntries(alerts.map(a => [a.id, a])),
+    levies: levies.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || '')),
     expenses, vendors, notices, payments, users: [], auditLog: [],
   };
   const settings = meta.find(m => m.id === 'settings');
@@ -208,6 +218,7 @@ async function loadData() {
   if (!S.settings.startMonth) S.settings.startMonth = curMonth();
   const coll = meta.find(m => m.id === 'collections');
   S.collections = coll?.byMonth || {};
+  S.special = coll?.special || {};
   if (isAdmin()) {
     // Totals saved before receipts were counted by dues month are rebuilt once.
     if (coll && coll.basis !== COLLECTION_BASIS) S.collections = await refreshCollectionTotals();
@@ -225,12 +236,18 @@ async function audit(action, entity, entityId, summary) {
 // a payment counts in the month its dues are for, whichever day it was actually received.
 const COLLECTION_BASIS = 'dues-month';
 async function refreshCollectionTotals() {
-  const byMonth = {};
+  const byMonth = {}, special = {};
   for (const p of await store.list('payments')) {
+    if (p.levyId) {   // a share of a split expense counts in the month it was received
+      const k = p.paidOn.slice(0, 7), m = (special[k] ||= {});
+      m[p.levyId] = (m[p.levyId] || 0) + Number(p.amount);
+      continue;
+    }
     const k = p.month || p.paidOn.slice(0, 7);
     byMonth[k] = (byMonth[k] || 0) + Number(p.amount);
   }
-  await store.put('meta', { id: 'collections', basis: COLLECTION_BASIS, byMonth, updatedAt: new Date().toISOString() });
+  await store.put('meta', { id: 'collections', basis: COLLECTION_BASIS, byMonth, special, updatedAt: new Date().toISOString() });
+  S.special = special;
   return byMonth;
 }
 
@@ -584,7 +601,7 @@ function myDuesBanner() {
 
 function viewDashboard() {
   const s = S.settings, cm = curMonth(), fy = fyStart(cm, s.fyStartMonth);
-  const fyMonths = monthsBetween(fy, cm), spent = spentByMonth(), coll = S.collections;
+  const fyMonths = monthsBetween(fy, cm), spent = spentByMonth(), coll = collectedByMonth();
   const mSum = (o, ks) => sum(ks, k => o[k] || 0);
   const firstMonth = [s.startMonth, ...Object.keys(spent)].sort()[0];
   const trend = monthsBetween([addMonths(cm, -11), firstMonth].sort().pop(), cm);
@@ -613,6 +630,7 @@ function viewDashboard() {
     ${isAdmin() ? vendorAlerts() : ''}
     ${isAdmin() ? alertsSummary() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
+    ${!isAdmin() && S.user.flatId ? levyBanner() : ''}
     ${taxBanners()}
     ${!isAdmin() ? myProfileNudge() : ''}
     ${isAdmin() ? profileSummaryCard() : ''}
@@ -848,11 +866,11 @@ const billingSummary = () => {
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
-  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['tax', 'House tax']];
+  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax']];
   return `
     <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
-    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : duesFlats()}`;
+    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : duesFlats()}`;
 }
 
 function duesGrid() {
@@ -985,6 +1003,7 @@ function duesResident() {
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
       : `<div class="banner ok">${icon('wallet')}<div><strong>All paid up</strong><span>Thank you!</span></div></div>`}
     ${S.settings.payNote ? `<div class="card"><h2>How to pay</h2><p>${esc(S.settings.payNote)}</p></div>` : ''}
+    ${myLevies(f)}
     <div class="card list">${months.map(mk => {
       const st = status(f, mk), pays = paymentsFor(f.id, mk);
       return `<div class="pending-row"><div class="row-main"><strong>${monthLabel(mk, true)}</strong>
@@ -1043,6 +1062,235 @@ function flatModal(f) {
       await refresh(isNew ? 'Flat added' : 'Flat updated');
     },
   });
+}
+
+// ---------- split expenses: a one-off cost (borewell repair, painting…) shared by the flats ----------
+// levies/{id}: { title, category, total, date, shares: { flatNo: ₹ }, instalments, dueDate, note, expenseId }.
+// Each flat's payments are ordinary payment records with a levyId (and no month).
+const MAX_INSTALMENTS = 12;
+const levyById = id => S.db.levies.find(l => l.id === id);
+const levyPays = (levyId, flatId) => S.db.payments.filter(p => p.levyId === levyId && (!flatId || p.flatId === flatId));
+const levyShare = (l, flatId) => Number(l.shares?.[flatId]) || 0;
+const levyFlats = l => S.db.flats.filter(f => levyShare(l, f.id) > 0);
+// Rupees split into n parts; any remainder goes on the first parts.
+function splitRupees(total, n) {
+  const base = Math.floor(total / n), extra = total - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+}
+function dateAddMonths(iso, k) {
+  const mk = addMonths(iso.slice(0, 7), k);
+  return `${mk}-${pad(Math.min(Number(iso.slice(8, 10)), lastDay(mk)))}`;
+}
+// Shares for each flat: equal, or by flat area (equal when no flat has an area).
+function levyShares(total, how) {
+  const flats = S.db.flats, area = sum(flats, f => f.sqft);
+  if (!flats.length || !(total > 0)) return {};
+  if (how !== 'area' || !area) return Object.fromEntries(flats.map((f, i) => [f.id, splitRupees(total, flats.length)[i]]));
+  const out = Object.fromEntries(flats.map(f => [f.id, Math.round(total * (Number(f.sqft) || 0) / area)]));
+  const big = flats.reduce((a, f) => (out[f.id] > out[a.id] ? f : a), flats[0]);
+  out[big.id] += total - sum(Object.values(out));   // rounding difference on the largest share
+  return out;
+}
+// The flat's share in instalments, with payments applied to the earliest first.
+function levyInstalments(l, flatId) {
+  const share = levyShare(l, flatId), n = Math.min(Math.max(Number(l.instalments) || 1, 1), MAX_INSTALMENTS);
+  if (!share) return [];
+  let left = sum(levyPays(l.id, flatId), p => p.amount);
+  return splitRupees(share, n).map((amount, i) => {
+    const due = l.dueDate ? dateAddMonths(l.dueDate, i) : '', paid = Math.min(left, amount);
+    left -= paid;
+    return { n: i + 1, amount, due, paid, key: paid >= amount ? 'paid' : due && todayISO() > due ? 'overdue' : 'pending' };
+  });
+}
+function levyStatus(l, flatId) {
+  const share = levyShare(l, flatId), paid = sum(levyPays(l.id, flatId), p => p.amount), inst = levyInstalments(l, flatId);
+  const next = inst.find(x => x.key !== 'paid');
+  const key = !share ? 'none' : paid >= share ? 'paid' : inst.some(x => x.key === 'overdue') ? 'overdue' : 'pending';
+  const label = { none: 'No share', paid: 'Paid', overdue: 'Overdue', pending: paid > 0 ? 'Partly paid' : 'Due' }[key];
+  return { key, label, share, paid, balance: Math.max(share - paid, 0), inst, next, cls: key === 'paid' ? 'ok' : key === 'overdue' ? 'bad' : 'warn' };
+}
+const instWord = l => (Number(l.instalments) || 1) > 1 ? `${l.instalments} monthly instalments` : 'one payment';
+const nextText = (l, st) => st.next ? `${(Number(l.instalments) || 1) > 1 ? `Instalment ${st.next.n} of ${l.instalments}: ` : ''}${money(st.next.amount - st.next.paid)}${st.next.due ? ` by ${dateLabel(st.next.due)}` : ''}` : '';
+function levyReminderText(l, f) {
+  const st = levyStatus(l, f.id), who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, a gentle reminder from ${societyName()}: your share of ${l.title} (${money(l.total)} split among the flats) is ${money(st.share)}. ${money(st.balance)} is pending${st.next ? ` · ${nextText(l, st)}` : ''}. ${S.settings.payNote || ''} Thank you! — ${S.settings.treasurer || ''}`.replace(/\s+/g, ' ').trim();
+}
+// Received for a split expense across all months (residents can see this total, not other flats' payments).
+const levyCollected = l => isAdmin() ? sum(levyPays(l.id), p => p.amount) : sum(Object.values(S.special), m => m[l.id] || 0);
+function levyProgress(l) {
+  const got = levyCollected(l), pct = Math.min(100, Math.round(got / (Number(l.total) || 1) * 100));
+  return `<div class="levy-progress"><div class="track"><i style="width:${pct}%"></i></div><small>${money(got)} of ${money(l.total)} collected</small></div>`;
+}
+
+function duesSplit() {
+  const levies = S.db.levies;
+  return `<div class="card"><div class="card-head"><div><h2>Split expenses</h2>
+      <p class="muted">One-off costs like a borewell repair or painting, shared by the flats. Each flat can pay at once or in monthly instalments.</p></div>
+      <button class="btn primary" data-action="add-levy">${icon('plus')}<span>Split an expense</span></button></div></div>
+    ${levies.length ? levies.map(levyCard).join('') : `<div class="card">${empty('No split expenses yet.')}</div>`}`;
+}
+function levyCard(l) {
+  const flats = levyFlats(l), owing = flats.filter(f => levyStatus(l, f.id).balance > 0);
+  return `<div class="card levy-card" data-levy="${esc(l.id)}">
+    <div class="card-head"><div><h2>${esc(l.title)}</h2>
+      <p class="muted">${money(l.total)} · ${l.date ? dateLabel(l.date) + ' · ' : ''}${flats.length} flat${flats.length === 1 ? '' : 's'} · ${instWord(l)}${l.dueDate ? ` · first due ${dateLabel(l.dueDate)}` : ''}</p></div>
+      <div class="row-btns">
+        ${owing.length ? `<button class="btn sm ghost" data-action="copy-levy-reminders" data-id="${esc(l.id)}">${icon('copy')}<span>Copy reminders</span></button>` : ''}
+        <button class="btn sm ghost" data-action="edit-levy" data-id="${esc(l.id)}">Edit</button></div></div>
+    ${l.note ? `<p class="levy-note">${esc(l.note)}</p>` : ''}
+    ${levyProgress(l)}
+    <div class="table-scroll"><table class="data stack levy-table"><thead><tr><th>Flat</th><th class="num">Share</th><th class="num">Paid</th><th>Status</th><th></th></tr></thead>
+    <tbody>${flats.map(f => {
+      const st = levyStatus(l, f.id), wa = waNumber(S.db.flatProfiles[f.id]?.phone);
+      return `<tr data-levy-row="${esc(f.id)}"><td class="stack-title"><strong>${esc(f.id)}</strong>${f.owner ? ` <small class="muted">${esc(f.owner)}</small>` : ''}</td>
+        <td class="num" data-label="Share">${money(st.share)}</td><td class="num" data-label="Paid">${money(st.paid)}</td>
+        <td data-label="Status"><span class="badge ${st.cls}">${st.label}</span>${st.next && st.next.due ? `<small class="muted block">Next: ${money(st.next.amount - st.next.paid)} by ${dateLabel(st.next.due)}</small>` : ''}</td>
+        <td class="num stack-full"><div class="row-btns end">
+          <button class="btn sm ${st.balance ? 'primary' : 'ghost'}" data-action="levy-pay" data-id="${esc(l.id)}" data-flat="${esc(f.id)}">${st.balance ? 'Record payment' : 'Paid ✓'}</button>
+          ${st.balance && wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(levyReminderText(l, f))}">${icon('chat')}<span>WhatsApp</span></a>` : ''}
+        </div></td></tr>`;
+    }).join('')}</tbody></table></div></div>`;
+}
+
+function levyShareInputs(shares) {
+  return S.db.flats.map(f => `<label class="field share-field"><span>Flat ${esc(f.id)}</span>
+    <input type="number" name="share_${esc(f.id)}" min="0" step="1" inputmode="numeric" value="${shares[f.id] ?? 0}"></label>`).join('');
+}
+function levyModal(l) {
+  const isNew = !l;
+  l ||= { title: '', category: '', total: '', date: todayISO(), split: 'equal', instalments: 1, dueDate: '', note: '', shares: {} };
+  const hasArea = S.db.flats.some(f => Number(f.sqft) > 0), n = Number(l.instalments) || 1;
+  openModal(isNew ? 'Split an expense' : `Edit · ${l.title}`, `<div class="levy-form" data-levy-form>
+    <p class="muted">The cost is shared by the flats. Set a flat's share to 0 to leave it out.</p>
+    <div class="form-grid">
+      <label class="field span2"><span>What for</span><input name="title" required maxlength="80" value="${esc(l.title)}" placeholder="e.g. Borewell repair, Painting"></label>
+      <label class="field"><span>Total cost (₹)</span><input type="number" name="total" required min="1" step="1" inputmode="numeric" value="${esc(l.total)}"></label>
+      <label class="field"><span>Date</span><input type="date" name="date" required value="${esc(l.date || todayISO())}"></label>
+      <label class="field span2"><span>Category</span><input name="category" required maxlength="60" list="levyCatList" value="${esc(l.category)}" placeholder="Pick from the list or type a new one"></label>
+      ${datalist('levyCatList', categoryList())}
+      <fieldset class="field span2 radio-row"><legend>Split</legend>
+        <label><input type="radio" name="split" value="equal"${l.split !== 'area' && l.split !== 'custom' ? ' checked' : ''}> Equally</label>
+        ${hasArea ? `<label><input type="radio" name="split" value="area"${l.split === 'area' ? ' checked' : ''}> By flat area</label>` : ''}
+        <label><input type="radio" name="split" value="custom"${l.split === 'custom' ? ' checked' : ''}> I'll type each share</label></fieldset>
+      <label class="field"><span>Pay in</span><select name="instalments">${Array.from({ length: MAX_INSTALMENTS }, (_, i) => i + 1)
+        .map(k => `<option value="${k}"${k === n ? ' selected' : ''}>${k === 1 ? 'One payment' : `${k} monthly instalments`}</option>`).join('')}</select></label>
+      <label class="field"><span>First payment due by</span><input type="date" name="dueDate" value="${esc(l.dueDate || '')}"></label>
+      <label class="field span2"><span>Note for residents (optional)</span><textarea name="note" rows="2" maxlength="300">${esc(l.note || '')}</textarea></label>
+    </div>
+    <h3>Share per flat</h3>
+    <div class="share-grid">${levyShareInputs(l.shares || {})}</div>
+    <p class="hint" data-share-sum></p>
+    ${isNew ? `<label class="check"><input type="checkbox" name="addExpense" checked> Also add it to Expenses (paid from the fund)</label>` : ''}
+  </div>`, {
+    submitLabel: isNew ? 'Split expense' : 'Save',
+    footer: isNew ? '' : `<button type="button" class="btn danger-ghost" data-action="delete-levy" data-id="${esc(l.id)}">Delete</button><span class="spacer"></span>`,
+    onSubmit: fd => submitLevy(fd, isNew ? null : l),
+  });
+  updateLevyForm($modal.querySelector('[data-levy-form]'), isNew && !l.total);
+}
+// Recalculate shares when the total or the split changes (unless shares are typed by hand); always show the sum.
+function updateLevyForm(box, recalc) {
+  if (!box) return;
+  const form = box.closest('form'), total = Math.round(Number(form.elements.total.value)) || 0, how = form.elements.split.value;
+  if (recalc && how !== 'custom') {
+    const shares = levyShares(total, how);
+    for (const f of S.db.flats) form.elements['share_' + f.id].value = shares[f.id] || 0;
+  }
+  const got = sum(S.db.flats, f => form.elements['share_' + f.id].value), n = Number(form.elements.instalments.value) || 1;
+  const counted = S.db.flats.filter(f => Number(form.elements['share_' + f.id].value) > 0).length;
+  box.querySelector('[data-share-sum]').innerHTML = `Shares add up to <strong>${money(got)}</strong>${total ? ` of ${money(total)}` : ''} · ${counted} flat${counted === 1 ? '' : 's'}${
+    n > 1 && counted ? ` · about ${money(Math.ceil(got / counted / n))} per flat each month` : ''}${total && got !== total ? ' <span class="badge bad">Does not match the total</span>' : ''}`;
+}
+async function submitLevy(fd, existing) {
+  const title = String(fd.get('title') || '').trim(), category = String(fd.get('category') || '').trim();
+  const total = Math.round(Number(fd.get('total'))), date = fd.get('date'), dueDate = fd.get('dueDate') || '';
+  const instalments = Math.min(Math.max(Number(fd.get('instalments')) || 1, 1), MAX_INSTALMENTS);
+  if (!title) throw new Error('Say what the expense is for.');
+  if (!(total > 0)) throw new Error('Enter the total cost.');
+  const shares = {};
+  for (const f of S.db.flats) { const v = Math.round(Number(fd.get('share_' + f.id)) || 0); if (v < 0) throw new Error('A share cannot be below zero.'); if (v) shares[f.id] = v; }
+  const got = sum(Object.values(shares));
+  if (!got) throw new Error('Give at least one flat a share.');
+  if (got !== total) throw new Error(`The shares add up to ${money(got)} but the total is ${money(total)}.`);
+  if (instalments > 1 && !dueDate) throw new Error('Set when the first instalment is due.');
+  if (existing) for (const [flatId] of Object.entries(existing.shares || {})) {
+    const paid = sum(levyPays(existing.id, flatId), p => p.amount);
+    if (paid > (shares[flatId] || 0)) throw new Error(`Flat ${flatId} has already paid ${money(paid)}; its share cannot be less than that.`);
+  }
+  const doc = { ...(existing || {}), title, category, total, date, dueDate, instalments, split: fd.get('split') || 'equal', shares, note: String(fd.get('note') || '').trim() };
+  const flatsN = Object.keys(shares).length, desc = `${title} (split among ${flatsN} flat${flatsN === 1 ? '' : 's'})`;
+  if (fd.get('addExpense')) {
+    const e = await save('expenses', { date, amount: total, category, description: desc, vendor: '', mode: modeList()[0] || '', paidBy: S.settings.treasurer || '' }, `${desc} — ${money(total)}`);
+    doc.expenseId = e.id;
+  } else if (existing?.expenseId) {
+    const e = S.db.expenses.find(x => x.id === existing.expenseId);
+    if (e) await save('expenses', { ...e, date, amount: total, category }, `${e.description} — ${money(total)}`);
+  }
+  const saved = await save('levies', doc, `Split expense ${title}: ${money(total)} among ${flatsN} flats${instalments > 1 ? ` in ${instalments} instalments` : ''}`);
+  if (doc.expenseId && !existing) { const e = await store.get('expenses', doc.expenseId); if (e) await store.put('expenses', { ...e, levyId: saved.id }); }
+  S.ui.duesTab = 'split';
+  await refresh(existing ? 'Split expense updated' : 'Expense split among the flats');
+}
+
+function levyPayModal(levyId, flatId) {
+  const l = levyById(levyId), st = levyStatus(l, flatId), pays = levyPays(levyId, flatId);
+  const suggest = st.next ? st.next.amount - st.next.paid : st.balance;
+  openModal(`Flat ${flatId} · ${l.title}`, `
+    <p class="pay-status"><span class="badge ${st.cls}">${st.label}</span> Share ${money(st.share)} · Paid ${money(st.paid)} · Pending ${money(st.balance)}</p>
+    ${st.inst.length > 1 || st.inst[0]?.due ? `<ul class="inst-list">${st.inst.map(x => `<li><span>${st.inst.length > 1 ? `Instalment ${x.n}` : 'Payment'}${x.due ? ` · by ${dateLabel(x.due)}` : ''}</span>
+      <strong>${money(x.amount)}</strong><span class="badge ${x.key === 'paid' ? 'ok' : x.key === 'overdue' ? 'bad' : 'warn'}">${x.key === 'paid' ? 'Paid' : x.paid ? `${money(x.paid)} paid` : x.key === 'overdue' ? 'Overdue' : 'Due'}</span></li>`).join('')}</ul>` : ''}
+    ${pays.length ? `<h3>Payments</h3><ul class="pay-list">${pays.map(p => `<li><span>${money(p.amount)} · ${dateLabel(p.paidOn)}${p.mode ? ' · ' + esc(p.mode) : ''}${p.ref ? ' · ' + esc(p.ref) : ''}</span>
+      <button type="button" class="btn sm danger-ghost" data-action="delete-payment" data-id="${esc(p.id)}">Remove</button></li>`).join('')}</ul>` : ''}
+    ${st.balance ? `<h3>Record payment</h3>
+    <div class="form-grid">
+      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="1" step="1" required value="${suggest}"></label>
+      <label class="field"><span>Received on</span><input type="date" name="paidOn" required value="${todayISO()}"></label>
+      <label class="field"><span>Mode</span><input name="mode" list="payModeList" maxlength="30" value="${esc(modeList()[0] || '')}"></label>
+      ${datalist('payModeList', modeList())}
+      <label class="field"><span>UPI ref / note</span><input name="ref" maxlength="60"></label>
+    </div>
+    ${st.balance !== suggest ? `<button type="button" class="btn sm ghost" data-action="levy-full" data-amount="${st.balance}">Pay full balance ${money(st.balance)}</button>` : ''}` : ''}`, st.balance ? {
+    submitLabel: 'Save payment',
+    onSubmit: async fd => {
+      const amount = Math.round(Number(fd.get('amount')));
+      if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+      if (amount > st.balance) throw new Error(`Only ${money(st.balance)} is pending for this flat.`);
+      await save('payments', { flatId, levyId, amount, paidOn: fd.get('paidOn'), mode: fd.get('mode').trim(), ref: fd.get('ref').trim() },
+        `${money(amount)} from Flat ${flatId} for ${l.title}`);
+      await refresh('Payment recorded');
+    },
+  } : {});
+}
+
+// Resident: their flat's shares (My flat) and a banner on Home while anything is pending.
+function myLevies(f) {
+  const mine = S.db.levies.filter(l => levyShare(l, f.id) > 0);
+  if (!mine.length) return '';
+  return `<h2 class="section-title">Split expenses</h2>${mine.map(l => {
+    const st = levyStatus(l, f.id), pays = levyPays(l.id, f.id);
+    return `<div class="card levy-mine" data-levy="${esc(l.id)}">
+      <div class="card-head"><div><h2>${esc(l.title)}</h2><p class="muted">${money(l.total)} shared by ${levyFlats(l).length} flats · ${instWord(l)}</p></div>
+        <span class="badge ${st.cls}">${st.label}</span></div>
+      ${l.note ? `<p class="levy-note">${esc(l.note)}</p>` : ''}
+      <div class="tax-amounts">
+        <div class="amt-box"><span>Your share</span><strong>${money(st.share)}</strong></div>
+        <div class="amt-box"><span>Paid</span><strong>${money(st.paid)}</strong></div>
+        <div class="amt-box ${st.balance ? 'total' : ''}"><span>Pending</span><strong>${money(st.balance)}</strong></div></div>
+      ${st.inst.length > 1 || st.inst[0]?.due ? `<div class="list">${st.inst.map(x => `<div class="pending-row"><div class="row-main"><strong>${st.inst.length > 1 ? `Instalment ${x.n} of ${st.inst.length}` : 'Payment'}</strong>
+        <small>${x.due ? `Due ${dateLabel(x.due)}` : 'No due date'}${x.paid && x.key !== 'paid' ? ` · ${money(x.paid)} paid` : ''}</small></div>
+        <strong class="row-amt">${money(x.amount)}</strong><span class="badge ${x.key === 'paid' ? 'ok' : x.key === 'overdue' ? 'bad' : 'warn'}">${x.key === 'paid' ? 'Paid' : x.key === 'overdue' ? 'Overdue' : 'Due'}</span></div>`).join('')}</div>` : ''}
+      ${pays.length ? `<p class="hint">Paid: ${pays.map(p => `${money(p.amount)} on ${dateLabel(p.paidOn)}`).join(' · ')}</p>` : ''}
+      ${levyProgress(l)}
+    </div>`;
+  }).join('')}`;
+}
+function levyBanner() {
+  const f = flatById(S.user.flatId);
+  if (!f) return '';
+  return S.db.levies.map(l => ({ l, st: levyStatus(l, f.id) })).filter(x => x.st.balance > 0).map(({ l, st }) =>
+    `<a class="banner ${st.key === 'overdue' ? 'bad' : 'warn'} levy-banner" href="#/dues">${icon('wallet')}<div>
+      <strong>${money(st.balance)} pending · ${esc(l.title)}</strong>
+      <span>Your share of ${money(l.total)}${st.next ? ` · ${esc(nextText(l, st))}` : ''} · tap to see details</span></div></a>`).join('');
 }
 
 // ---------- flat details (each flat keeps its own; private to that flat and admins) ----------
@@ -1851,15 +2099,16 @@ function monthlyReport() {
   const first = [s.startMonth, ...S.db.expenses.map(e => e.date.slice(0, 7))].sort()[0];
   const months = monthsBetween(first, cm).reverse();
   // Default to the most recent month that has entries.
-  const mk = S.ui.reportMonth || months.find(m => S.collections[m] || S.db.expenses.some(e => e.date.startsWith(m))) || cm;
+  const mk = S.ui.reportMonth || months.find(m => S.collections[m] || specialIn(m) || S.db.expenses.some(e => e.date.startsWith(m))) || cm;
   const prev = addMonths(mk, -1), next = addMonths(mk, 1);
-  const opening = balanceThrough(prev), received = S.collections[mk] || 0;
+  const opening = balanceThrough(prev), maint = S.collections[mk] || 0, received = maint + specialIn(mk);
+  const specials = Object.entries(S.special[mk] || {}).filter(([, v]) => v).map(([id, v]) => [levyById(id)?.title || 'Split expense', v]);
   const exps = S.db.expenses.filter(e => e.date.startsWith(mk)).sort(byExpenseOrder);
   const spent = sum(exps, e => e.amount), closing = opening + received - spent;
   const short = m => monthLabel(m).replace(' ', " '");
 
   // "Receipts (@ ₹1,000 × 8)" when every payment for this month's dues was the standard amount.
-  const pays = isAdmin() ? S.db.payments.filter(p => (p.month || p.paidOn.slice(0, 7)) === mk) : [];
+  const pays = isAdmin() ? S.db.payments.filter(p => !p.levyId && (p.month || p.paidOn.slice(0, 7)) === mk) : [];
   const rate = billingFor(mk);
   const uniform = pays.length && rate.billing !== 'sqft' && pays.every(p => Number(p.amount) === Number(rate.fixedAmount));
   const receiptsLabel = uniform ? `Receipts (@ ${money(rate.fixedAmount)} × ${pays.length})` : 'Receipts (maintenance collected)';
@@ -1874,7 +2123,8 @@ function monthlyReport() {
       ${statementHeader('Maintenance', monthLabel(mk, true))}
       <table class="st-table">
         <tbody>
-          <tr><td>${esc(receiptsLabel)}</td><td class="num">${money(received)}</td></tr>
+          <tr><td>${esc(receiptsLabel)}</td><td class="num">${money(maint)}</td></tr>
+          ${specials.map(([t, v]) => `<tr class="st-special"><td>Split expense collected: ${esc(t)}</td><td class="num">${money(v)}</td></tr>`).join('')}
           <tr><td>Balance from ${short(prev)}</td><td class="num">${money(opening)}</td></tr>
           <tr class="subtotal"><td>Total</td><td class="num">${money(opening + received)}</td></tr>
         </tbody>
@@ -1908,7 +2158,7 @@ function annualReport() {
   const spent = spentByMonth();
   const exps = S.db.expenses.filter(e => months.includes(e.date.slice(0, 7)));
   const cats = categoryTotals(exps), totalSpent = sum(cats, c => c.value);
-  const totalIn = sum(months, m => S.collections[m] || 0);
+  const collIn = collectedByMonth(), totalIn = sum(months, m => collIn[m] || 0);
   const opening = months.length ? balanceThrough(addMonths(months[0], -1)) : 0;
   return `
     <div class="toolbar-inline no-print">${fyNav(fy, 'rfy-prev', 'rfy-next')}</div>
@@ -1918,7 +2168,7 @@ function annualReport() {
       <div class="table-scroll"><table class="data st-annual">
         <thead><tr><th>Month</th><th class="num">Collected</th><th class="num">Spent</th><th class="num">Net</th><th class="num">Balance</th></tr></thead>
         <tbody><tr class="muted-row"><td>Opening balance</td><td></td><td></td><td></td><td class="num">${money(opening)}</td></tr>
-          ${months.map(m => { const i = S.collections[m] || 0, o = spent[m] || 0; return `<tr><td><span class="wide-only">${monthLabel(m, true)}</span><span class="narrow-only">${monthLabel(m)}</span></td><td class="num">${money(i)}</td><td class="num">${money(o)}</td>
+          ${months.map(m => { const i = collIn[m] || 0, o = spent[m] || 0; return `<tr><td><span class="wide-only">${monthLabel(m, true)}</span><span class="narrow-only">${monthLabel(m)}</span></td><td class="num">${money(i)}</td><td class="num">${money(o)}</td>
             <td class="num ${i - o < 0 ? 'neg' : ''}">${money(i - o)}</td><td class="num">${money(balanceThrough(m))}</td></tr>`; }).join('')}</tbody>
         <tfoot><tr><th>Total</th><th class="num">${money(totalIn)}</th><th class="num">${money(totalSpent)}</th><th class="num">${money(totalIn - totalSpent)}</th><th class="num">${money(balanceThrough(months.at(-1)))}</th></tr></tfoot>
       </table></div>
@@ -2076,7 +2326,7 @@ function viewSettings() {
 }
 
 const ENTITY_LABELS = {
-  usage: 'usage log', flatAlerts: 'flat alert', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
+  usage: 'usage log', flatAlerts: 'flat alert', levies: 'split expense', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
   notices: 'notice', meta: 'settings', users: 'member', all: 'data',
 };
 
@@ -2097,14 +2347,14 @@ function membersCard() {
     </table></div>` : empty('Nobody has signed in yet. Share the site link with residents.')}</div>`;
 }
 
-const IMPORT_COLLECTIONS = ['flats', 'flatProfiles', 'expenses', 'payments', 'vendors', 'notices'];
+const IMPORT_COLLECTIONS = ['flats', 'flatProfiles', 'expenses', 'payments', 'levies', 'vendors', 'notices'];
 
 function backupJson() {
   const { id, ...settings } = S.settings;
   return JSON.stringify({
     app: 'svln-paradise', version: 1, exportedAt: new Date().toISOString(), settings,
     flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses,
-    payments: S.db.payments, vendors: S.db.vendors, notices: S.db.notices,
+    payments: S.db.payments, levies: S.db.levies, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
 }
 
@@ -2303,12 +2553,25 @@ const ACTIONS = {
   'fy-prev': () => { S.ui.fy = addMonths(S.ui.fy || fyStart(curMonth(), S.settings.fyStartMonth), -12); rerender(); },
   'fy-next': () => { S.ui.fy = addMonths(S.ui.fy || fyStart(curMonth(), S.settings.fyStartMonth), 12); rerender(); },
   pay: ds => payModal(ds.flat, ds.month),
+  'add-levy': () => levyModal(),
+  'edit-levy': ds => levyModal(levyById(ds.id)),
+  'levy-pay': ds => levyPayModal(ds.id, ds.flat),
+  'levy-full': (ds, el) => { el.closest('form').elements.amount.value = ds.amount; },
+  'copy-levy-reminders': ds => { const l = levyById(ds.id); return copyText(levyFlats(l).filter(f => levyStatus(l, f.id).balance > 0).map(f => levyReminderText(l, f)).join('\n\n')); },
+  async 'delete-levy'(ds) {
+    const l = levyById(ds.id), n = levyPays(l.id).length;
+    if (n) throw new Error(`${l.title} has ${n} payment${n === 1 ? '' : 's'}. Remove them first.`);
+    if (!confirm(`Delete the split expense “${l.title}”?${l.expenseId ? ' The entry in Expenses stays.' : ''}`)) return;
+    await del('levies', l.id, `Split expense ${l.title}`);
+    closeModal();
+    await refresh('Split expense deleted');
+  },
   async 'delete-payment'(ds) {
     const p = S.db.payments.find(x => x.id === ds.id);
     if (!confirm(`Remove ${money(p.amount)} payment from Flat ${p.flatId}?`)) return;
-    await del('payments', p.id, `${money(p.amount)} from Flat ${p.flatId} for ${monthLabel(p.month, true)}`);
+    await del('payments', p.id, `${money(p.amount)} from Flat ${p.flatId} for ${p.levyId ? levyById(p.levyId)?.title || 'split expense' : monthLabel(p.month, true)}`);
     await refresh('Payment removed');
-    payModal(p.flatId, p.month);
+    if (p.levyId) levyPayModal(p.levyId, p.flatId); else payModal(p.flatId, p.month);
   },
   'copy-reminder': ds => { const f = flatById(ds.flat); return copyText(reminderText(f, outstanding(f))); },
   'copy-all-reminders': () => copyText(S.db.flats.map(f => ({ f, o: outstanding(f) })).filter(r => r.o.total > 0)
@@ -2504,6 +2767,8 @@ function bindEvents() {
     } catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('input', e => {
+    const box = e.target.closest?.('[data-levy-form]');
+    if (box) return updateLevyForm(box, ['total', 'split'].includes(e.target.name));
     const key = e.target.dataset?.filter;
     if (!key) return;
     S.ui.exp[key] = e.target.value;
@@ -2511,6 +2776,7 @@ function bindEvents() {
   });
   document.addEventListener('change', async e => {
     const t = e.target;
+    if (t.closest?.('[data-levy-form]') && t.name === 'split') return updateLevyForm(t.closest('[data-levy-form]'), true);
     if (!t.dataset.change) return;
     // A hidden file input lives inside a label styled as a button (Import data file): spin that.
     const shown = t.type === 'file' ? t.closest('.btn') : null;

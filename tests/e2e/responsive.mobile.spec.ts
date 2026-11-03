@@ -90,6 +90,33 @@ for (const width of WIDTHS) {
       await check('post notice', () => app.main.getByRole('button', { name: 'Post notice' }).click());
     });
 
+    test('split expenses fit the screen: form, list, payment and the resident view', async ({ app, page }) => {
+      await app.open();
+      await app.duesTab('Split expenses');
+      expect(await layoutProblems(page), 'empty split tab').toEqual([]);
+      await app.main.getByRole('button', { name: 'Split an expense' }).click();
+      await app.field('What for').fill('Painting the building');
+      await app.field('Total cost (₹)').fill('80000');
+      await app.field('Category').fill('Repairs');
+      await app.modal.locator('select[name="instalments"]').selectOption({ label: '3 monthly instalments' });
+      await app.field('First payment due by').fill('2026-11-10');
+      expect(await layoutProblems(page), 'split dialog').toEqual([]);
+      await app.submitModal('Split expense');
+      await app.expectToast('Expense split among the flats');
+      expect(await layoutProblems(page), 'split list').toEqual([]);
+      await app.main.locator('tr[data-levy-row="302"]').getByRole('button', { name: 'Record payment' }).click();
+      expect(await layoutProblems(page), 'split payment dialog').toEqual([]);
+      await app.submitModal('Save payment');
+      await app.expectToast('Payment recorded');
+      await app.viewAs(RESIDENT);
+      await app.go('dashboard');
+      await expect(app.main.locator('.levy-banner')).toBeVisible();
+      expect(await layoutProblems(page), 'resident home with split banner').toEqual([]);
+      await app.go('dues');
+      await expect(app.main.locator('.levy-mine')).toBeVisible();
+      expect(await layoutProblems(page), 'resident split card').toEqual([]);
+    });
+
     test('Telugu: every page fits the screen', async ({ app, page }) => {
       await app.open();
       await page.locator('#userBox .lang-btn').click();
