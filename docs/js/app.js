@@ -2470,7 +2470,7 @@ function viewSettings() {
 }
 
 const ENTITY_LABELS = {
-  usage: 'usage log', flatAlerts: 'flat alert', levies: 'split expense', claims: 'cost paid by an owner', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
+  usage: 'usage log', flatAlerts: 'flat alert', levies: 'split expense', claims: 'owner request', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
   notices: 'notice', meta: 'settings', users: 'member', all: 'data',
 };
 
@@ -2491,14 +2491,14 @@ function membersCard() {
     </table></div>` : empty('Nobody has signed in yet. Share the site link with residents.')}</div>`;
 }
 
-const IMPORT_COLLECTIONS = ['flats', 'flatProfiles', 'expenses', 'payments', 'levies', 'vendors', 'notices'];
+const IMPORT_COLLECTIONS = ['flats', 'flatProfiles', 'expenses', 'payments', 'levies', 'claims', 'vendors', 'notices'];
 
 function backupJson() {
   const { id, ...settings } = S.settings;
   return JSON.stringify({
     app: 'svln-paradise', version: 1, exportedAt: new Date().toISOString(), settings,
     flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses,
-    payments: S.db.payments, levies: S.db.levies, vendors: S.db.vendors, notices: S.db.notices,
+    payments: S.db.payments, levies: S.db.levies, claims: S.db.claims, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
 }
 
