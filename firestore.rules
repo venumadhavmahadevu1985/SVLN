@@ -83,6 +83,29 @@ service cloud.firestore {
     // Split expenses (borewell, painting…): every member sees the shares; only admins set them.
     match /levies/{id}   { allow read: if isMember(); allow write: if isAdmin(); }
 
+    // A flat owner asks for a cost they paid to be split: they may only send it for their own flat, as
+    // waiting; only admins approve or refuse it. They may withdraw it while it is still waiting.
+    match /claims/{id} {
+      allow read: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId);
+      allow create: if isAdmin() || (isMember() && request.resource.data.flatId == profile().flatId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['flatId', 'uid', 'name', 'title', 'amount', 'date', 'note', 'hasBill', 'status', 'at'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
+        && request.resource.data.amount is number && request.resource.data.amount > 0 && request.resource.data.amount <= 10000000
+        && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 300)));
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId && resource.data.status == 'pending');
+    }
+    // The bill for a request (photo or PDF saved as text, under 1 MB).
+    match /claimBills/{id} {
+      allow read, delete: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId);
+      allow create: if (isAdmin() || (isMember() && request.resource.data.flatId == profile().flatId))
+        && request.resource.data.keys().hasOnly(['flatId', 'name', 'type', 'data'])
+        && request.resource.data.data is string && request.resource.data.data.size() < 1000000;
+      allow update: if false;
+    }
+
     // Residents see only their own flat's payments; monthly totals are in meta/collections.
     match /payments/{id} {
       allow read: if isAdmin() || (isMember() && resource.data.flatId == profile().flatId);

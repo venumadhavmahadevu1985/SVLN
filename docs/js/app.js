@@ -19,7 +19,7 @@ const S = {
   user: null,
   info: null,          // public/info: society name + address (readable before sign-in)
   hasSettings: false,
-  db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
+  db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], claims: [], expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...FALLBACK },
   collections: {},
   special: {},         // split-expense money received: { 'YYYY-MM': { levyId: amount } }
@@ -203,12 +203,15 @@ async function loadData() {
   const profiles = isAdmin() ? await store.list('flatProfiles')
     : S.user.flatId ? [await store.get('flatProfiles', S.user.flatId)].filter(Boolean) : [];
   const levies = await store.list('levies').catch(() => []);
+  const claims = await (isAdmin() ? store.list('claims')
+    : S.user.flatId ? store.list('claims', ['flatId', '==', S.user.flatId]) : Promise.resolve([])).catch(() => []);
   const alerts = await (isAdmin() ? store.list('flatAlerts')
     : S.user.flatId ? store.get('flatAlerts', S.user.flatId).then(a => [a].filter(Boolean)) : Promise.resolve([])).catch(() => []);
   S.db = {
     flats: flats.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })),
     flatProfiles: Object.fromEntries(profiles.map(p => [p.id, p])),
     flatAlerts: Object.fromEntries(alerts.map(a => [a.id, a])),
+    claims: claims.sort((a, b) => (b.at || '').localeCompare(a.at || '')),
     levies: levies.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || '')),
     expenses, vendors, notices, payments, users: [], auditLog: [],
   };
@@ -239,8 +242,8 @@ async function refreshCollectionTotals() {
   const byMonth = {}, special = {};
   for (const p of await store.list('payments')) {
     if (p.levyId) {   // a share of a split expense counts in the month it was received
-      const k = p.paidOn.slice(0, 7), m = (special[k] ||= {});
-      m[p.levyId] = (m[p.levyId] || 0) + Number(p.amount);
+      const k = p.paidOn.slice(0, 7), m = (special[k] ||= {}), key = p.auto ? p.levyId + ':adj' : p.levyId;
+      m[key] = (m[key] || 0) + Number(p.amount);
       continue;
     }
     const k = p.month || p.paidOn.slice(0, 7);
@@ -629,6 +632,7 @@ function viewDashboard() {
       <span>${esc(trunc(n.body, 160))}</span><small class="banner-date">${dateLabel(n.date)}</small></div></a>`).join('')}
     ${isAdmin() ? vendorAlerts() : ''}
     ${isAdmin() ? alertsSummary() : ''}
+    ${isAdmin() ? claimsBanner() : ''}
     ${!isAdmin() && S.user.flatId ? myDuesBanner() : ''}
     ${!isAdmin() && S.user.flatId ? levyBanner() : ''}
     ${taxBanners()}
@@ -1116,7 +1120,7 @@ function levyReminderText(l, f) {
   return `Namaste ${who}, a gentle reminder from ${societyName()}: your share of ${l.title} (${money(l.total)} split among the flats) is ${money(st.share)}. ${money(st.balance)} is pending${st.next ? ` · ${nextText(l, st)}` : ''}. ${S.settings.payNote || ''} Thank you! — ${S.settings.treasurer || ''}`.replace(/\s+/g, ' ').trim();
 }
 // Received for a split expense across all months (residents can see this total, not other flats' payments).
-const levyCollected = l => isAdmin() ? sum(levyPays(l.id), p => p.amount) : sum(Object.values(S.special), m => m[l.id] || 0);
+const levyCollected = l => isAdmin() ? sum(levyPays(l.id), p => p.amount) : sum(Object.values(S.special), m => (m[l.id] || 0) + (m[l.id + ':adj'] || 0));
 function levyProgress(l) {
   const got = levyCollected(l), pct = Math.min(100, Math.round(got / (Number(l.total) || 1) * 100));
   return `<div class="levy-progress"><div class="track"><i style="width:${pct}%"></i></div><small>${money(got)} of ${money(l.total)} collected</small></div>`;
@@ -1127,13 +1131,14 @@ function duesSplit() {
   return `<div class="card"><div class="card-head"><div><h2>Split expenses</h2>
       <p class="muted">One-off costs like a borewell repair or painting, shared by the flats. Each flat can pay at once or in monthly instalments.</p></div>
       <button class="btn primary" data-action="add-levy">${icon('plus')}<span>Split an expense</span></button></div></div>
+    ${claimsAdminCard()}
     ${levies.length ? levies.map(levyCard).join('') : `<div class="card">${empty('No split expenses yet.')}</div>`}`;
 }
 function levyCard(l) {
   const flats = levyFlats(l), owing = flats.filter(f => levyStatus(l, f.id).balance > 0);
   return `<div class="card levy-card" data-levy="${esc(l.id)}">
     <div class="card-head"><div><h2>${esc(l.title)}</h2>
-      <p class="muted">${money(l.total)} · ${l.date ? dateLabel(l.date) + ' · ' : ''}${flats.length} flat${flats.length === 1 ? '' : 's'} · ${instWord(l)}${l.dueDate ? ` · first due ${dateLabel(l.dueDate)}` : ''}</p></div>
+      <p class="muted">${money(l.total)} · ${l.date ? dateLabel(l.date) + ' · ' : ''}${flats.length} flat${flats.length === 1 ? '' : 's'} · ${instWord(l)}${l.dueDate ? ` · first due ${dateLabel(l.dueDate)}` : ''}${l.paidByFlat ? ` · paid by Flat ${esc(l.paidByFlat)}` : ''}</p></div>
       <div class="row-btns">
         ${owing.length ? `<button class="btn sm ghost" data-action="copy-levy-reminders" data-id="${esc(l.id)}">${icon('copy')}<span>Copy reminders</span></button>` : ''}
         <button class="btn sm ghost" data-action="edit-levy" data-id="${esc(l.id)}">Edit</button></div></div>
@@ -1156,11 +1161,15 @@ function levyShareInputs(shares) {
   return S.db.flats.map(f => `<label class="field share-field"><span>Flat ${esc(f.id)}</span>
     <input type="number" name="share_${esc(f.id)}" min="0" step="1" inputmode="numeric" value="${shares[f.id] ?? 0}"></label>`).join('');
 }
-function levyModal(l) {
+function levyModal(l, claim) {
   const isNew = !l;
-  l ||= { title: '', category: '', total: '', date: todayISO(), split: 'equal', instalments: 1, dueDate: '', note: '', shares: {} };
+  l ||= claim ? { title: claim.title, category: '', total: claim.amount, date: claim.date, split: 'equal', instalments: 1, dueDate: '', note: claim.note || '', shares: {} }
+    : { title: '', category: '', total: '', date: todayISO(), split: 'equal', instalments: 1, dueDate: '', note: '', shares: {} };
+  const owner = claim?.flatId || l.paidByFlat;
   const hasArea = S.db.flats.some(f => Number(f.sqft) > 0), n = Number(l.instalments) || 1;
-  openModal(isNew ? 'Split an expense' : `Edit · ${l.title}`, `<div class="levy-form" data-levy-form>
+  openModal(claim ? `Approve & split · Flat ${claim.flatId}` : isNew ? 'Split an expense' : `Edit · ${l.title}`, `<div class="levy-form" data-levy-form>
+    ${owner ? `<div class="banner info">${icon('wallet')}<div><strong>Paid by Flat ${esc(owner)}${claim ? ` · ${money(claim.amount)} on ${dateLabel(claim.date)}` : ''}</strong>
+      <span>Flat ${esc(owner)}'s own share is counted as paid. The rest is paid back to them from the fund, and the other flats pay their shares as usual.</span></div></div>` : ''}
     <p class="muted">The cost is shared by the flats. Set a flat's share to 0 to leave it out.</p>
     <div class="form-grid">
       <label class="field span2"><span>What for</span><input name="title" required maxlength="80" value="${esc(l.title)}" placeholder="e.g. Borewell repair, Painting"></label>
@@ -1180,13 +1189,14 @@ function levyModal(l) {
     <h3>Share per flat</h3>
     <div class="share-grid">${levyShareInputs(l.shares || {})}</div>
     <p class="hint" data-share-sum></p>
-    ${isNew ? `<label class="check"><input type="checkbox" name="addExpense" checked> Also add it to Expenses (paid from the fund)</label>` : ''}
+    ${isNew && owner ? `<p class="hint">The bill (${money(l.total)}) is added to Expenses as paid to Flat ${esc(owner)}.</p>` : ''}
+    ${isNew && !owner ? '<label class="check"><input type="checkbox" name="addExpense" checked> Also add it to Expenses (paid from the fund)</label>' : ''}
   </div>`, {
-    submitLabel: isNew ? 'Split expense' : 'Save',
+    submitLabel: claim ? 'Approve & split' : isNew ? 'Split expense' : 'Save',
     footer: isNew ? '' : `<button type="button" class="btn danger-ghost" data-action="delete-levy" data-id="${esc(l.id)}">Delete</button><span class="spacer"></span>`,
-    onSubmit: fd => submitLevy(fd, isNew ? null : l),
+    onSubmit: fd => submitLevy(fd, isNew ? null : l, claim),
   });
-  updateLevyForm($modal.querySelector('[data-levy-form]'), isNew && !l.total);
+  updateLevyForm($modal.querySelector('[data-levy-form]'), isNew);
 }
 // Recalculate shares when the total or the split changes (unless shares are typed by hand); always show the sum.
 function updateLevyForm(box, recalc) {
@@ -1201,7 +1211,7 @@ function updateLevyForm(box, recalc) {
   box.querySelector('[data-share-sum]').innerHTML = `Shares add up to <strong>${money(got)}</strong>${total ? ` of ${money(total)}` : ''} · ${counted} flat${counted === 1 ? '' : 's'}${
     n > 1 && counted ? ` · about ${money(Math.ceil(got / counted / n))} per flat each month` : ''}${total && got !== total ? ' <span class="badge bad">Does not match the total</span>' : ''}`;
 }
-async function submitLevy(fd, existing) {
+async function submitLevy(fd, existing, claim) {
   const title = String(fd.get('title') || '').trim(), category = String(fd.get('category') || '').trim();
   const total = Math.round(Number(fd.get('total'))), date = fd.get('date'), dueDate = fd.get('dueDate') || '';
   const instalments = Math.min(Math.max(Number(fd.get('instalments')) || 1, 1), MAX_INSTALMENTS);
@@ -1214,22 +1224,38 @@ async function submitLevy(fd, existing) {
   if (got !== total) throw new Error(`The shares add up to ${money(got)} but the total is ${money(total)}.`);
   if (instalments > 1 && !dueDate) throw new Error('Set when the first instalment is due.');
   if (existing) for (const [flatId] of Object.entries(existing.shares || {})) {
-    const paid = sum(levyPays(existing.id, flatId), p => p.amount);
+    const paid = sum(levyPays(existing.id, flatId).filter(p => !p.auto), p => p.amount);   // the owner's adjusted share follows the new share
     if (paid > (shares[flatId] || 0)) throw new Error(`Flat ${flatId} has already paid ${money(paid)}; its share cannot be less than that.`);
   }
-  const doc = { ...(existing || {}), title, category, total, date, dueDate, instalments, split: fd.get('split') || 'equal', shares, note: String(fd.get('note') || '').trim() };
-  const flatsN = Object.keys(shares).length, desc = `${title} (split among ${flatsN} flat${flatsN === 1 ? '' : 's'})`;
-  if (fd.get('addExpense')) {
-    const e = await save('expenses', { date, amount: total, category, description: desc, vendor: '', mode: modeList()[0] || '', paidBy: S.settings.treasurer || '' }, `${desc} — ${money(total)}`);
-    doc.expenseId = e.id;
+  if (claim && (await store.get('claims', claim.id))?.status !== 'pending') throw new Error('This request was already decided or withdrawn.');
+  const owner = claim?.flatId || existing?.paidByFlat || '';
+  const doc = { ...(existing || {}), title, category, total, date, dueDate, instalments, split: fd.get('split') || 'equal', shares, note: String(fd.get('note') || '').trim(),
+    ...(claim ? { claimId: claim.id, paidByFlat: owner } : {}) };
+  const flatsN = Object.keys(shares).length;
+  const desc = owner ? `${title} — bill paid by Flat ${owner}` : `${title} (split among ${flatsN} flat${flatsN === 1 ? '' : 's'})`;
+  // The split is saved first, so a failed write never leaves an expense without its split.
+  const saved = await save('levies', doc, `Split expense ${title}: ${money(total)} among ${flatsN} flats${instalments > 1 ? ` in ${instalments} instalments` : ''}${owner ? ` (paid by Flat ${owner})` : ''}`);
+  if (claim || fd.get('addExpense')) {
+    const e = await save('expenses', { date, amount: total, category, description: desc, vendor: owner ? `Flat ${owner}` : '', mode: modeList()[0] || '', paidBy: S.settings.treasurer || '', levyId: saved.id }, `${desc} — ${money(total)}`);
+    await store.put('levies', { ...saved, expenseId: e.id });
   } else if (existing?.expenseId) {
     const e = S.db.expenses.find(x => x.id === existing.expenseId);
-    if (e) await save('expenses', { ...e, date, amount: total, category }, `${e.description} — ${money(total)}`);
+    if (e && (e.amount !== total || e.date !== date || e.category !== category)) await save('expenses', { ...e, date, amount: total, category }, `${e.description} — ${money(total)}`);
   }
-  const saved = await save('levies', doc, `Split expense ${title}: ${money(total)} among ${flatsN} flats${instalments > 1 ? ` in ${instalments} instalments` : ''}`);
-  if (doc.expenseId && !existing) { const e = await store.get('expenses', doc.expenseId); if (e) await store.put('expenses', { ...e, levyId: saved.id }); }
+  // The owner who paid the bill: their share is settled against it (one adjusted payment that follows their share).
+  if (owner) {
+    const auto = levyPays(saved.id, owner).find(p => p.auto), share = shares[owner] || 0;
+    if (auto && !share) await del('payments', auto.id, `Adjusted share of Flat ${owner} for ${title} removed`);
+    else if (auto && auto.amount !== share) await save('payments', { ...auto, amount: share }, `Adjusted share of Flat ${owner} for ${title}: ${money(share)}`);
+    else if (!auto && share) await save('payments', { flatId: owner, levyId: saved.id, amount: share, paidOn: date, mode: 'Adjusted (paid the bill)', ref: '', auto: true },
+      `${money(share)} from Flat ${owner} for ${title} (adjusted: they paid the bill)`);
+  }
+  if (claim) {
+    await store.put('claims', { ...claim, status: 'approved', levyId: saved.id, decidedAt: new Date().toISOString(), decidedBy: S.user.name });
+    await audit('update', 'claims', claim.id, `Approved: ${title} paid by Flat ${owner} — ${money(total)} split among ${flatsN} flats`);
+  }
   S.ui.duesTab = 'split';
-  await refresh(existing ? 'Split expense updated' : 'Expense split among the flats');
+  await refresh(claim ? 'Approved and split among the flats' : existing ? 'Split expense updated' : 'Expense split among the flats');
 }
 
 function levyPayModal(levyId, flatId) {
@@ -1262,14 +1288,128 @@ function levyPayModal(levyId, flatId) {
   } : {});
 }
 
+// ----- owners' requests: a flat owner paid for something; the treasurer approves it and decides the split -----
+// claims/{id}: { flatId, uid, name, title, amount, date, note, hasBill, status (pending / approved / rejected), reason, levyId, at, decidedAt, decidedBy }
+// claimBills/{id}: the bill photo or PDF (same id as the claim).
+const CLAIM_STATUS = { pending: ['warn', 'Waiting for approval'], approved: ['ok', 'Approved'], rejected: ['bad', 'Not approved'] };
+const claimsWaiting = () => S.db.claims.filter(c => c.status === 'pending');
+function claimModal() {
+  openModal('Paid for something?', `<p class="muted">If you paid for something for the building yourself (a plumber, a motor repair…), send it to the treasurer. If it is approved, the cost is split among the flats and you are paid back.</p>
+    <div class="form-grid">
+      <label class="field span2"><span>What did you pay for</span><input name="title" required maxlength="80" placeholder="e.g. Plumber for the main pipe"></label>
+      <label class="field"><span>Amount paid (₹)</span><input type="number" name="amount" required min="1" step="1" inputmode="numeric"></label>
+      <label class="field"><span>Paid on</span><input type="date" name="date" required max="${todayISO()}" value="${todayISO()}"></label>
+      <label class="field span2"><span>Details (optional)</span><textarea name="note" rows="2" maxlength="300" placeholder="Who did the work, why it was needed"></textarea></label>
+      <div class="field span2"><label for="claimBill"><span>Bill or receipt (photo or PDF, optional)</span></label><input id="claimBill" type="file" name="bill" accept="image/*,application/pdf"></div>
+    </div>`, {
+    submitLabel: 'Send for approval',
+    onSubmit: async fd => {
+      const title = String(fd.get('title') || '').trim(), amount = Math.round(Number(fd.get('amount'))), date = fd.get('date');
+      if (!title) throw new Error('Say what you paid for.');
+      if (!(amount > 0)) throw new Error('Enter the amount you paid.');
+      if (date > todayISO()) throw new Error('The date cannot be in the future.');
+      const file = fd.get('bill'), bill = file && file.size ? await readTaxDoc(file) : null;
+      const c = await store.put('claims', { flatId: S.user.flatId, uid: S.user.uid, name: S.user.name, title, amount, date,
+        note: String(fd.get('note') || '').trim(), hasBill: !!bill, status: 'pending', at: new Date().toISOString() });
+      if (bill) await store.put('claimBills', { id: c.id, flatId: S.user.flatId, ...bill });
+      await audit('create', 'claims', c.id, `Flat ${S.user.flatId} asked to split ${title}: ${money(amount)}`);
+      await refresh('Sent to the treasurer for approval');
+    },
+  });
+}
+function claimRejectModal(c) {
+  openModal(`Not approve · Flat ${c.flatId}`, `<p><strong>${esc(c.title)}</strong> · ${money(c.amount)} · ${dateLabel(c.date)}</p>
+    <label class="field"><span>Reason (shown to the flat)</span><textarea name="reason" rows="3" maxlength="300"></textarea></label>`, {
+    submitLabel: 'Not approve',
+    onSubmit: async fd => {
+      const fresh = await store.get('claims', c.id);
+      if (fresh?.status !== 'pending') throw new Error('This request was already decided or withdrawn.');
+      const reason = String(fd.get('reason') || '').trim();
+      await store.put('claims', { ...fresh, status: 'rejected', reason, decidedAt: new Date().toISOString(), decidedBy: S.user.name });
+      await audit('update', 'claims', c.id, `Not approved: ${c.title} from Flat ${c.flatId} — ${money(c.amount)}${reason ? ` (${trunc(reason, 60)})` : ''}`);
+      await refresh('Request not approved');
+    },
+  });
+}
+async function viewClaimBill(id) {
+  const win = window.open('', '_blank');
+  try {
+    const d = await store.get('claimBills', id);
+    if (!d?.data) throw new Error('The bill could not be found.');
+    const url = URL.createObjectURL(await (await fetch(d.data)).blob());
+    if (win) win.location.href = url;
+    else Object.assign(document.createElement('a'), { href: url, download: d.name }).click();
+  } catch (err) { win?.close(); throw err; }
+}
+const claimLine = c => `${money(c.amount)} · paid ${dateLabel(c.date)}${c.note ? ` · ${esc(c.note)}` : ''}`;
+function claimsAdminCard() {
+  const waiting = claimsWaiting();
+  if (!waiting.length) return '';
+  return `<div class="card claims-card"><div class="card-head"><h2>Paid by owners · waiting for approval (${waiting.length})</h2></div>
+    <div class="list">${waiting.map(c => `<div class="pending-row claim-row" data-claim="${esc(c.id)}">
+      <div class="row-main"><strong>Flat ${esc(c.flatId)} · ${esc(c.title)}</strong><small>${claimLine(c)}${c.name ? ` · sent by ${esc(c.name)}` : ''}</small></div>
+      <div class="row-btns">
+        ${c.hasBill ? `<button class="btn sm ghost" data-action="view-claim-bill" data-id="${esc(c.id)}">${icon('clip')}<span>Bill</span></button>` : ''}
+        <button class="btn sm primary" data-action="approve-claim" data-id="${esc(c.id)}">Approve & split</button>
+        <button class="btn sm ghost" data-action="reject-claim" data-id="${esc(c.id)}">Not approve</button></div></div>`).join('')}</div></div>`;
+}
+function claimsBanner() {
+  const n = claimsWaiting().length;
+  return n ? `<a class="banner warn claims-banner" href="#/dues" data-action="open-split">${icon('wallet')}<div>
+    <strong>${n} cost${n === 1 ? '' : 's'} paid by owners waiting for your approval</strong>
+    <span>${claimsWaiting().map(c => `Flat ${esc(c.flatId)}: ${esc(c.title)} ${money(c.amount)}`).join(' · ')}</span></div></a>` : '';
+}
+function myClaims() {
+  const mine = S.db.claims;
+  return `<div class="card my-claims"><div class="card-head"><div><h2>Paid for something yourself?</h2>
+      <p class="muted">Ask the treasurer to split it among the flats.</p></div>
+      <button class="btn sm primary" data-action="add-claim">${icon('plus')}<span>Send a cost</span></button></div>
+    ${mine.length ? `<div class="list">${mine.map(c => { const [cls, label] = CLAIM_STATUS[c.status] || CLAIM_STATUS.pending; return `<div class="pending-row" data-claim="${esc(c.id)}">
+      <div class="row-main"><strong>${esc(c.title)}</strong><small>${claimLine(c)}${c.status === 'rejected' && c.reason ? ` · Reason: ${esc(c.reason)}` : ''}${c.status === 'approved' && levyById(c.levyId) ? ' · split among the flats (see below)' : ''}</small></div>
+      <span class="badge ${cls}">${label}</span>
+      ${c.status === 'pending' ? `<button class="btn sm ghost" data-action="withdraw-claim" data-id="${esc(c.id)}">Withdraw</button>` : ''}</div>`; }).join('')}</div>` : ''}</div>`;
+}
+
+// Report: one statement per split expense, so anyone can see what it cost, how it was shared and what is left to collect.
+function levyReport() {
+  const levies = isAdmin() ? S.db.levies : S.db.levies.filter(l => levyShare(l, S.user.flatId) > 0 || levyCollected(l));
+  if (!levies.length) return `<div class="card">${empty('No split expenses yet.')}</div>`;
+  return levies.map(l => {
+    const flats = levyFlats(l), got = levyCollected(l), left = Math.max(Number(l.total) - got, 0);
+    const how = { area: 'by flat area', custom: 'by set shares' }[l.split] || 'equally';
+    const rows = isAdmin() ? flats : flats.filter(f => f.id === S.user.flatId);
+    const sts = rows.map(f => ({ f, st: levyStatus(l, f.id) }));
+    return `<article class="card statement printable levy-report" data-levy="${esc(l.id)}">
+      ${statementHeader('Split expense', l.title)}
+      <table class="st-table levy-info"><tbody>
+        <tr><td>What for</td><td class="num">${esc(l.title)}${l.category ? ` <small>(${esc(l.category)})</small>` : ''}</td></tr>
+        <tr><td>Date</td><td class="num">${l.date ? dateLabel(l.date) : '—'}</td></tr>
+        ${l.paidByFlat ? `<tr><td>Bill paid by</td><td class="num">Flat ${esc(l.paidByFlat)}: their share ${money(levyShare(l, l.paidByFlat))} is settled against it; ${money(Number(l.total) - levyShare(l, l.paidByFlat))} is paid back from the fund</td></tr>` : ''}
+        <tr><td>Shared</td><td class="num">${how} among ${flats.length} flat${flats.length === 1 ? '' : 's'}</td></tr>
+        <tr><td>Payment</td><td class="num">${instWord(l)}${l.dueDate ? `, first due ${dateLabel(l.dueDate)}` : ''}</td></tr>
+        <tr class="subtotal"><td>Total cost</td><td class="num">${money(l.total)}</td></tr>
+        <tr><td>Collected so far</td><td class="num">${money(got)}</td></tr>
+        <tr class="grand"><td>Still to collect</td><td class="num">${money(left)}</td></tr>
+      </tbody></table>
+      ${sts.length ? `<h3 class="st-section">${isAdmin() ? 'Each flat' : 'Your flat'}</h3>
+      <div class="table-scroll"><table class="data levy-report-table"><thead><tr><th>Flat</th><th class="num">Share</th><th class="num">Paid</th><th class="num">Pending</th><th>Status</th></tr></thead>
+        <tbody>${sts.map(({ f, st }) => `<tr><td>${esc(f.id)}${f.id === l.paidByFlat ? ' <small class="muted">paid the bill</small>' : ''}</td><td class="num">${money(st.share)}</td><td class="num">${money(st.paid)}</td>
+          <td class="num">${money(st.balance)}</td><td><span class="badge ${st.cls}">${st.label}</span></td></tr>`).join('')}</tbody>
+        ${isAdmin() ? `<tfoot><tr><th>Total</th><th class="num">${money(sum(sts, x => x.st.share))}</th><th class="num">${money(sum(sts, x => x.st.paid))}</th><th class="num">${money(sum(sts, x => x.st.balance))}</th><th></th></tr></tfoot>` : ''}
+      </table></div>` : ''}
+      ${l.note ? `<p class="levy-note">${esc(l.note)}</p>` : ''}
+      <footer class="st-foot"><span>${S.settings.treasurer ? 'Prepared by ' + esc(S.settings.treasurer) + ' · ' : ''}${dateLabel(todayISO())}</span></footer>
+    </article>`;
+  }).join('');
+}
+
 // Resident: their flat's shares (My flat) and a banner on Home while anything is pending.
 function myLevies(f) {
   const mine = S.db.levies.filter(l => levyShare(l, f.id) > 0);
-  if (!mine.length) return '';
-  return `<h2 class="section-title">Split expenses</h2>${mine.map(l => {
+  return `<h2 class="section-title">Split expenses</h2>${myClaims()}${mine.map(l => {
     const st = levyStatus(l, f.id), pays = levyPays(l.id, f.id);
     return `<div class="card levy-mine" data-levy="${esc(l.id)}">
-      <div class="card-head"><div><h2>${esc(l.title)}</h2><p class="muted">${money(l.total)} shared by ${levyFlats(l).length} flats · ${instWord(l)}</p></div>
+      <div class="card-head"><div><h2>${esc(l.title)}</h2><p class="muted">${money(l.total)} shared by ${levyFlats(l).length} flats · ${instWord(l)}${l.paidByFlat === f.id ? ' · you paid the bill: your share is adjusted and the rest is paid back to you' : ''}</p></div>
         <span class="badge ${st.cls}">${st.label}</span></div>
       ${l.note ? `<p class="levy-note">${esc(l.note)}</p>` : ''}
       <div class="tax-amounts">
@@ -2084,8 +2224,9 @@ function viewReports() {
     <div class="seg no-print" role="tablist">
       <button role="tab" aria-selected="${tab === 'monthly'}" class="${tab === 'monthly' ? 'active' : ''}" data-action="report-tab" data-tab="monthly">Monthly statement</button>
       <button role="tab" aria-selected="${tab === 'annual'}" class="${tab === 'annual' ? 'active' : ''}" data-action="report-tab" data-tab="annual">Annual summary</button>
+      <button role="tab" aria-selected="${tab === 'split'}" class="${tab === 'split' ? 'active' : ''}" data-action="report-tab" data-tab="split">Split expenses</button>
     </div>
-    ${tab === 'monthly' ? monthlyReport() : annualReport()}`;
+    ${tab === 'monthly' ? monthlyReport() : tab === 'split' ? levyReport() : annualReport()}`;
 }
 
 function statementHeader(title, sub) {
@@ -2102,7 +2243,10 @@ function monthlyReport() {
   const mk = S.ui.reportMonth || months.find(m => S.collections[m] || specialIn(m) || S.db.expenses.some(e => e.date.startsWith(m))) || cm;
   const prev = addMonths(mk, -1), next = addMonths(mk, 1);
   const opening = balanceThrough(prev), maint = S.collections[mk] || 0, received = maint + specialIn(mk);
-  const specials = Object.entries(S.special[mk] || {}).filter(([, v]) => v).map(([id, v]) => [levyById(id)?.title || 'Split expense', v]);
+  const specials = Object.entries(S.special[mk] || {}).filter(([, v]) => v).map(([key, v]) => {
+    const [id, adj] = key.split(':'), l = levyById(id), t = l?.title || 'split expense';
+    return [adj ? `Flat ${l?.paidByFlat || ''}'s share of ${t} (settled against the bill they paid)` : `Split expense collected: ${t}`, v];
+  });
   const exps = S.db.expenses.filter(e => e.date.startsWith(mk)).sort(byExpenseOrder);
   const spent = sum(exps, e => e.amount), closing = opening + received - spent;
   const short = m => monthLabel(m).replace(' ', " '");
@@ -2124,7 +2268,7 @@ function monthlyReport() {
       <table class="st-table">
         <tbody>
           <tr><td>${esc(receiptsLabel)}</td><td class="num">${money(maint)}</td></tr>
-          ${specials.map(([t, v]) => `<tr class="st-special"><td>Split expense collected: ${esc(t)}</td><td class="num">${money(v)}</td></tr>`).join('')}
+          ${specials.map(([t, v]) => `<tr class="st-special"><td>${esc(t)}</td><td class="num">${money(v)}</td></tr>`).join('')}
           <tr><td>Balance from ${short(prev)}</td><td class="num">${money(opening)}</td></tr>
           <tr class="subtotal"><td>Total</td><td class="num">${money(opening + received)}</td></tr>
         </tbody>
@@ -2326,7 +2470,7 @@ function viewSettings() {
 }
 
 const ENTITY_LABELS = {
-  usage: 'usage log', flatAlerts: 'flat alert', levies: 'split expense', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
+  usage: 'usage log', flatAlerts: 'flat alert', levies: 'split expense', claims: 'cost paid by an owner', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
   notices: 'notice', meta: 'settings', users: 'member', all: 'data',
 };
 
@@ -2541,7 +2685,8 @@ const ACTIONS = {
     openModal('Edit expense', expenseForm(e), { onSubmit: fd => submitExpense(fd, e) });
   },
   async 'delete-expense'(ds) {
-    const e = S.db.expenses.find(x => x.id === ds.id);
+    const e = S.db.expenses.find(x => x.id === ds.id), l = e.levyId && levyById(e.levyId);
+    if (l?.paidByFlat) throw new Error(`This is the bill Flat ${l.paidByFlat} paid for ${l.title}. To undo it, delete the split expense in Dues → Split expenses.`);
     if (!confirm(`Delete “${e.description}” (${money(e.amount)})?`)) return;
     await del('expenses', e.id, `${e.description} — ${money(e.amount)}`);
     closeModal();
@@ -2554,14 +2699,35 @@ const ACTIONS = {
   'fy-next': () => { S.ui.fy = addMonths(S.ui.fy || fyStart(curMonth(), S.settings.fyStartMonth), 12); rerender(); },
   pay: ds => payModal(ds.flat, ds.month),
   'add-levy': () => levyModal(),
+  'add-claim': () => claimModal(),
+  'approve-claim': ds => levyModal(null, S.db.claims.find(c => c.id === ds.id)),
+  'reject-claim': ds => claimRejectModal(S.db.claims.find(c => c.id === ds.id)),
+  'view-claim-bill': ds => viewClaimBill(ds.id),
+  'open-split': () => { S.ui.duesTab = 'split'; location.hash = '#/dues'; if (S.route === 'dues') rerender(); },
+  async 'withdraw-claim'(ds) {
+    const c = S.db.claims.find(x => x.id === ds.id);
+    if (!confirm(`Withdraw your request for ${c.title} (${money(c.amount)})?`)) return;
+    if (c.hasBill) await store.remove('claimBills', c.id);
+    await store.remove('claims', c.id);
+    await audit('delete', 'claims', c.id, `Flat ${c.flatId} withdrew ${c.title}: ${money(c.amount)}`);
+    await refresh('Request withdrawn');
+  },
   'edit-levy': ds => levyModal(levyById(ds.id)),
   'levy-pay': ds => levyPayModal(ds.id, ds.flat),
   'levy-full': (ds, el) => { el.closest('form').elements.amount.value = ds.amount; },
   'copy-levy-reminders': ds => { const l = levyById(ds.id); return copyText(levyFlats(l).filter(f => levyStatus(l, f.id).balance > 0).map(f => levyReminderText(l, f)).join('\n\n')); },
   async 'delete-levy'(ds) {
-    const l = levyById(ds.id), n = levyPays(l.id).length;
+    const l = levyById(ds.id), n = levyPays(l.id).filter(p => !p.auto).length;
     if (n) throw new Error(`${l.title} has ${n} payment${n === 1 ? '' : 's'}. Remove them first.`);
-    if (!confirm(`Delete the split expense “${l.title}”?${l.expenseId ? ' The entry in Expenses stays.' : ''}`)) return;
+    if (!confirm(`Delete the split expense “${l.title}”?${l.claimId ? ` Flat ${l.paidByFlat}'s request goes back to waiting for approval.` : ''}`)) return;
+    const exp = l.expenseId && S.db.expenses.find(e => e.id === l.expenseId);
+    // An owner's repayment is part of the approval, so it goes too; otherwise ask.
+    if (exp && (l.claimId || confirm(`Also delete “${exp.description}” (${money(exp.amount)}) from Expenses?`))) await del('expenses', exp.id, `${exp.description} — ${money(exp.amount)}`);
+    for (const p of levyPays(l.id)) await del('payments', p.id, `Adjusted share of Flat ${p.flatId} for ${l.title} removed`);
+    if (l.claimId) {
+      const c = await store.get('claims', l.claimId);
+      if (c) await store.put('claims', { ...c, status: 'pending', levyId: '', decidedAt: '', decidedBy: '' });
+    }
     await del('levies', l.id, `Split expense ${l.title}`);
     closeModal();
     await refresh('Split expense deleted');

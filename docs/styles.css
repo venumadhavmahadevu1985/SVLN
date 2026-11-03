@@ -613,3 +613,7 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .inst-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .inst-list li span:first-child { flex: 1 1 140px; }
 .levy-mine .pending-row .badge { justify-self: start; width: auto; }
+.modal-card > header h2 { min-width: 0; overflow-wrap: anywhere; }
+.modal-card > header .icon-btn { flex: none; }
+.levy-info td.num { white-space: normal; overflow-wrap: anywhere; }
+.levy-info td:first-child { white-space: nowrap; vertical-align: top; }

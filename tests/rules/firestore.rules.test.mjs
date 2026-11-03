@@ -318,6 +318,37 @@ describe('split expenses', () => {
   });
 });
 
+describe('costs paid by an owner', () => {
+  const claim = (uid, extra = {}) => ({ flatId: '302', uid, name: 'Resident', title: 'Plumber', amount: 800, date: '2026-11-03', note: '', hasBill: false, status: 'pending', at: 'now', ...extra });
+  test('a resident sends a cost for their own flat only, as waiting', async () => {
+    const uid = RES;
+    await assertSucceeds(setDoc(doc(as(RES), 'claims/c1'), claim(uid)));
+    await assertFails(setDoc(doc(as(RES), 'claims/c2'), claim(uid, { flatId: '101' })));
+    await assertFails(setDoc(doc(as(RES), 'claims/c3'), claim(uid, { status: 'approved' })));
+    await assertFails(setDoc(doc(as(RES), 'claims/c4'), claim('someone-else')));
+    await assertFails(setDoc(doc(as(RES), 'claims/c5'), claim(uid, { amount: 0 })));
+    await assertFails(setDoc(doc(as(RES), 'claims/c6'), claim(uid, { levyId: 'x' })));
+    await assertFails(setDoc(doc(as(PENDING), 'claims/c7'), claim(PENDING, { flatId: '302' })));
+  });
+  test('only that flat and admins read it; only admins approve; the flat may withdraw only while waiting', async () => {
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'claims/c8'), claim(RES)));
+    await assertSucceeds(getDoc(doc(as(RES), 'claims/c8')));
+    await assertFails(getDoc(doc(as(OTHER), 'claims/c8')));
+    await assertFails(updateDoc(doc(as(RES), 'claims/c8'), { status: 'approved' }));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'claims/c8'), { status: 'approved' }));
+    await assertFails(deleteDoc(doc(as(RES), 'claims/c8')));
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'claims/c9'), claim(RES)));
+    await assertFails(deleteDoc(doc(as(OTHER), 'claims/c9')));
+    await assertSucceeds(deleteDoc(doc(as(RES), 'claims/c9')));
+  });
+  test('bills: own flat only, under 1 MB', async () => {
+    await assertSucceeds(setDoc(doc(as(RES), 'claimBills/c1'), { flatId: '302', name: 'b.jpg', type: 'image/jpeg', data: 'data:x' }));
+    await assertFails(setDoc(doc(as(RES), 'claimBills/c2'), { flatId: '101', name: 'b.jpg', type: 'image/jpeg', data: 'data:x' }));
+    await assertFails(getDoc(doc(as(OTHER), 'claimBills/c1')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'claimBills/c1')));
+  });
+});
+
 describe('house tax penalty', () => {
   test('a resident can save a penalty amount; bad values are refused', async () => {
     const db = as(RES);

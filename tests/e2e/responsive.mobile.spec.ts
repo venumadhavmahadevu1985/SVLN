@@ -115,6 +115,24 @@ for (const width of WIDTHS) {
       await app.go('dues');
       await expect(app.main.locator('.levy-mine')).toBeVisible();
       expect(await layoutProblems(page), 'resident split card').toEqual([]);
+      await app.main.getByRole('button', { name: 'Send a cost' }).click();
+      expect(await layoutProblems(page), 'send a cost dialog').toEqual([]);
+      await app.field('What did you pay for').fill('Plumber for the main water pipe');
+      await app.field('Amount paid (₹)').fill('800');
+      await app.submitModal('Send for approval');
+      await app.expectToast('Sent to the treasurer for approval');
+      expect(await layoutProblems(page), 'resident with a request').toEqual([]);
+      await app.viewAs('demo-admin');
+      await app.go('dashboard');
+      expect(await layoutProblems(page), 'treasurer home with requests').toEqual([]);
+      await app.duesTab('Split expenses');
+      expect(await layoutProblems(page), 'split tab with requests').toEqual([]);
+      await app.main.locator('.claim-row').getByRole('button', { name: 'Approve & split' }).click();
+      expect(await layoutProblems(page), 'approve dialog').toEqual([]);
+      await page.keyboard.press('Escape');
+      await app.go('reports');
+      await app.main.getByRole('tab', { name: 'Split expenses' }).click();
+      expect(await layoutProblems(page), 'split report').toEqual([]);
     });
 
     test('Telugu: every page fits the screen', async ({ app, page }) => {
