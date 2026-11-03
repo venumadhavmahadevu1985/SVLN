@@ -104,10 +104,10 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
-  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'tap to mark it paid': 'చెల్లించినట్లు గుర్తించడానికి నొక్కండి',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Pay now': 'ఇప్పుడే చెల్లించండి', 'WhatsApp reminder': 'వాట్సాప్ రిమైండర్',
+  'Send a courtesy reminder on WhatsApp': 'వాట్సాప్‌లో మర్యాదపూర్వక రిమైండర్ పంపండి', 'tap to mark it paid': 'చెల్లించినట్లు గుర్తించడానికి నొక్కండి',
   'Taxpayer name': 'పన్ను చెల్లింపుదారు పేరు', 'Taxpayer name (as on the GVMC bill)': 'పన్ను చెల్లింపుదారు పేరు (GVMC బిల్లుపై ఉన్నట్లు)',
-  'Owner name printed on the tax bill': 'పన్ను బిల్లుపై ఉన్న యజమాని పేరు', 'Tax per half-year': 'అర్ధ సంవత్సరానికి పన్ను',
-  'Tax per half-year (₹)': 'అర్ధ సంవత్సరానికి పన్ను (₹)', 'Tax due now': 'ఇప్పుడు చెల్లించాల్సిన పన్ను', 'Nothing due': 'బకాయి లేదు',
+  'Owner name printed on the tax bill': 'పన్ను బిల్లుపై ఉన్న యజమాని పేరు', 'Due amount': 'చెల్లించాల్సిన మొత్తం', 'Due amount (₹)': 'చెల్లించాల్సిన మొత్తం (₹)', 'Nothing due': 'బకాయి లేదు',
   'Enter the tax amount in rupees (0 to 10,00,000).': 'పన్ను మొత్తాన్ని రూపాయల్లో ఇవ్వండి (0 నుండి 10,00,000).', 'Copy and open the payment page': 'కాపీ చేసి చెల్లింపు పేజీ తెరవండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
   'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.':
     'మీ అసెస్‌మెంట్ నంబర్ కాపీ అవుతుంది — చెల్లింపు పేజీలో పేస్ట్ చేయండి. చెల్లించిన తర్వాత ఇక్కడికి వచ్చి “చెల్లించినట్లు గుర్తించండి” నొక్కండి.',

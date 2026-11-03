@@ -560,3 +560,6 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
 .house-tax .tax-pay small { flex: 1 1 200px; }
 a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; display: inline-flex; align-items: center; min-height: 36px; }
 .house-tax .due-amt { font-size: 18px; color: var(--warn, var(--text)); }
+.tax-banner .row-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tax-banner .row-btns .btn span { display: inline; color: inherit; font-size: inherit; }
+.tax-banner .row-btns .btn .ic { margin-top: 0; color: inherit; }

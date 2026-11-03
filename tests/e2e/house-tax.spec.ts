@@ -17,8 +17,40 @@ test.describe('House tax · resident', () => {
     await expect(banner).toHaveClass(/warn/);
     await expect(banner).toContainText('House tax due in 10 days · 15 Nov 2026');
     await expect(banner).toContainText('2nd half-year · ₹1,700 · Assessment No. DEMO-1074-0302');
-    await banner.click();
+    await banner.getByRole('link', { name: 'Details' }).click();
     await expect(app.heading).toHaveText('Flat 302');
+    await expect(card(app.page)).toBeVisible();
+  });
+
+  test('Home reminder has Pay now (copies the number, opens GVMC) and Mark paid', async ({ app, page, context }) => {
+    await context.route('https://pgi.billdesk.com/**', r => r.fulfill({ contentType: 'text/html', body: '<title>GVMC (test stub)</title>' }));
+    const banner = app.main.locator('.tax-banner');
+    // The button text keeps the button's own colour (not the banner's grey text).
+    const payText = banner.locator('.btn.primary span');
+    expect(await payText.evaluate(e => getComputedStyle(e).color)).toBe(await payText.evaluate(e => getComputedStyle(e.closest('.btn')!).color));
+    const popup = page.waitForEvent('popup');
+    await banner.getByRole('link', { name: 'Pay now' }).click();
+    const tab = await popup;
+    await expect(tab).toHaveURL('https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp');
+    await tab.close();
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
+    await expect(app.heading).toHaveText('Overview');            // still on Home
+
+    await banner.getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Amount (₹)')).toHaveValue('1700');
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(app.main.locator('.tax-banner')).toHaveCount(0);
+  });
+
+  test('on My flat the house tax comes first while something is due, then goes below once paid', async ({ app }) => {
+    await app.go('dues');
+    const firstCard = app.main.locator('.card').first();
+    await expect(firstCard).toHaveClass(/house-tax/);
+    await due(app.page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(app.main.locator('.card').first()).not.toHaveClass(/house-tax/);
     await expect(card(app.page)).toBeVisible();
   });
 
@@ -54,19 +86,19 @@ test.describe('House tax · resident', () => {
     await expect(due(app.page, '2026-11-15').locator('.badge')).toHaveText('Due in 10 days');
   });
 
-  test('shows the taxpayer name, tax per half-year and the tax due now', async ({ app }) => {
+  test('shows the taxpayer name and the due amount', async ({ app }) => {
     await app.go('dues');
     const c = card(app.page), dd = (label: string) => c.locator('dl div', { has: app.page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd');
     await expect(dd('Taxpayer name')).toHaveText('Owner 302 (demo)');
-    await expect(dd('Tax per half-year')).toHaveText('₹1,700');
-    await expect(dd('Tax due now')).toHaveText('₹1,700');
+    await expect(dd('Due amount')).toHaveText('₹1,700');
+    await expect(c.locator('dt', { hasText: /half-year|Tax due now/ })).toHaveCount(0);
     await expect(due(app.page, '2026-11-15')).toContainText('Due 15 Nov 2026 · ₹1,700');
     // Mark paid starts with the amount filled in; after paying nothing is due.
     await due(app.page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
     await expect(app.field('Amount (₹)')).toHaveValue('1700');
     await app.submitModal();
     await app.expectToast('House tax marked paid');
-    await expect(dd('Tax due now')).toHaveText('Nothing due');
+    await expect(dd('Due amount')).toHaveText('Nothing due');
   });
 
   test('the owner can add or change the taxpayer name and amount', async ({ app }) => {
@@ -75,7 +107,7 @@ test.describe('House tax · resident', () => {
     await c.getByRole('button', { name: 'Edit', exact: true }).click();
     await expect(app.field('Taxpayer name (as on the GVMC bill)')).toHaveValue('Owner 302 (demo)');
     await app.field('Taxpayer name (as on the GVMC bill)').fill('K. Lakshmi');
-    await app.field('Tax per half-year (₹)').fill('2140');
+    await app.field('Due amount (₹)').fill('2140');
     await app.submitModal();
     await app.expectToast('House tax details saved');
     await expect(c).toContainText('K. Lakshmi');
@@ -88,7 +120,7 @@ test.describe('House tax · resident', () => {
     await app.go('dues');
     const c = card(app.page);
     await c.getByRole('button', { name: 'Edit', exact: true }).click();
-    await app.field('Tax per half-year (₹)').fill('');
+    await app.field('Due amount (₹)').fill('');
     await app.submitModal();
     await app.expectToast('House tax details saved');
     await expect(c.locator('.tax-due-now dd')).toHaveText('1 instalment due — add the amount');
@@ -263,11 +295,20 @@ test.describe('House tax · treasurer', () => {
     await app.modal.getByLabel('Not paid after all').check();
     await app.submitModal();
     await app.expectToast('Payment removed');
-    const remind = row('201').getByRole('link', { name: 'Remind' });
+    const remind = row('201').getByRole('link', { name: 'WhatsApp reminder' });
     await expect(remind).toHaveAttribute('href', /^https:\/\/wa\.me\/919000000201\?text=/);
+    await expect(remind).toHaveAttribute('title', 'Send a courtesy reminder on WhatsApp');
     const text = decodeURIComponent((await remind.getAttribute('href'))!.split('text=')[1]);
-    expect(text).toContain('Owner 201 (demo) garu (Flat 201)');
-    expect(text).toContain('house tax (Assessment No. DEMO-1074-0201) for 2nd half-year (₹1,850) is due on 15 Nov 2026');
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('Namaste Owner 201 (demo) garu (Flat 201) 🙏');
+    expect(lines).toContain('This is a courtesy reminder: house tax for 2nd half-year is due on 15 Nov 2026.');
+    expect(lines).toContain('Assessment No: DEMO-1074-0201');
+    expect(lines).toContain('Taxpayer: Owner 201 (demo)');
+    expect(lines).toContain('Due amount: ₹1,850');
+    expect(lines).toContain('Pay online (GVMC): https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp');
+    expect(lines.find(l => l.startsWith('Your flat details, Pay and Mark paid in the SVLN app: '))).toMatch(/#\/dues$/);
+    expect(lines[lines.length - 1]).toBe('Please ignore if already paid. Thank you! — SVLN Paradise');
+    expect(text).not.toMatch(/\n\n\n/);
   });
 
   test('Settings: due dates drive the reminders (overdue turns red; none set turns them off)', async ({ app, page }) => {

@@ -842,8 +842,7 @@ function duesResident() {
   const months = billingMonths().slice().reverse();
   return `
     <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${ordinal(S.settings.dueDay)}</p></div></div>
-    ${flatDetailsCard(f)}
-    ${houseTaxCard(f)}
+    ${taxReminders(f.id).length ? houseTaxCard(f) + flatDetailsCard(f) : flatDetailsCard(f) + houseTaxCard(f)}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
@@ -1030,9 +1029,23 @@ const taxFocus = flatId => taxReminders(flatId)[0] || taxDues().find(d => d.date
 const taxAmount = flatId => Number(S.db.flatProfiles[flatId]?.taxAmount) || 0;
 const taxAmountText = flatId => taxAmount(flatId) ? money(taxAmount(flatId)) : '';
 
+// Courtesy reminder for WhatsApp: what is due, the GVMC pay link, and a link to the flat's own page.
 function taxReminderText(f, d) {
   const p = S.db.flatProfiles[f.id] || {}, who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
-  return `Namaste ${who}, reminder: house tax${p.taxAssessmentNo ? ` (Assessment No. ${p.taxAssessmentNo})` : ''} for ${d.label}${taxAmount(f.id) ? ` (${money(taxAmount(f.id))})` : ''} is due on ${dateLabel(d.date)}. After paying, please mark it paid in the SVLN app: ${siteLink()}`;
+  const n = daysUntil(d.date), when = n < 0 ? `was due on ${dateLabel(d.date)}` : `is due on ${dateLabel(d.date)}`;
+  return [
+    `Namaste ${who} 🙏`,
+    `This is a courtesy reminder: house tax for ${d.label} ${when}.`,
+    '',
+    ...(p.taxAssessmentNo ? [`Assessment No: ${p.taxAssessmentNo}`] : []),
+    ...(p.taxOwnerName ? [`Taxpayer: ${p.taxOwnerName}`] : []),
+    ...(taxAmount(f.id) ? [`Due amount: ${money(taxAmount(f.id))}`] : []),
+    '',
+    ...(taxPayUrl() ? [`Pay online (GVMC): ${taxPayUrl()}`, p.taxAssessmentNo ? 'Enter the assessment number above on that page.' : 'Keep your assessment number ready.'] : []),
+    `Your flat details, Pay and Mark paid in the SVLN app: ${siteLink()}#/dues`,
+    '',
+    `Please ignore if already paid. Thank you! — ${societyName() || 'Treasurer'}`,
+  ].join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 function houseTaxCard(f) {
@@ -1044,9 +1057,9 @@ function houseTaxCard(f) {
     <dl class="details">
       <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo, 'strong') : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Taxpayer name</dt><dd>${p.taxOwnerName ? esc(p.taxOwnerName) : '<span class="muted">Not added yet</span>'}</dd></div>
-      <div><dt>Tax per half-year</dt><dd>${taxAmount(f.id) ? `<strong>${money(taxAmount(f.id))}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div>
-      <div class="tax-due-now"><dt>Tax due now</dt><dd>${!owing.length ? '<span class="badge ok">Nothing due</span>'
-        : dueNow ? `<strong class="due-amt">${money(dueNow)}</strong>` : `<span class="muted">${owing.length} instalment${owing.length === 1 ? '' : 's'} due — add the amount</span>`}</dd></div>
+      <div class="tax-due-now"><dt>Due amount</dt><dd>${owing.length
+        ? (dueNow ? `<strong class="due-amt">${money(dueNow)}</strong>` : `<span class="muted">${owing.length} instalment${owing.length === 1 ? '' : 's'} due — add the amount</span>`)
+        : taxAmount(f.id) ? '<span class="badge ok">Nothing due</span>' : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Tax document</dt><dd>${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">${icon('clip')}<span>${esc(p.taxDoc.name)}</span></button>` : '<span class="muted">Not uploaded</span>'}</dd></div>
     </dl>
     ${dues.length ? `<div class="list tax-dues">${dues.map(d => {
@@ -1087,7 +1100,7 @@ function houseTaxModal(flatId) {
   openModal(`House tax · Flat ${flatId}`, `<div class="form-grid">
     <label class="field span2"><span>Assessment number</span><input name="taxAssessmentNo" maxlength="40" autocomplete="off" value="${esc(p.taxAssessmentNo || '')}" placeholder="As printed on the tax bill"></label>
     <label class="field span2"><span>Taxpayer name (as on the GVMC bill)</span><input name="taxOwnerName" maxlength="100" autocomplete="off" value="${esc(p.taxOwnerName || '')}" placeholder="Owner name printed on the tax bill"></label>
-    <label class="field"><span>Tax per half-year (₹)</span><input type="number" name="taxAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(p.taxAmount || '')}"></label>
+    <label class="field"><span>Due amount (₹)</span><input type="number" name="taxAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(p.taxAmount || '')}"></label>
     <div class="field span2"><label for="taxDocIn"><span>Tax bill or receipt (photo or PDF)</span></label>
       <input id="taxDocIn" type="file" name="taxDoc" accept="image/*,application/pdf">
       ${p.taxDoc ? `<small class="muted">Current: ${esc(p.taxDoc.name)} · <label class="inline"><input type="checkbox" name="removeTaxDoc"> remove</label></small>` : ''}
@@ -1151,9 +1164,14 @@ function taxBanners() {
     const no = S.db.flatProfiles[f.id]?.taxAssessmentNo;
     return taxReminders(f.id).map(d => {
       const n = daysUntil(d.date);
-      return `<a class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner" href="#/dues">${icon('home')}<div>
+      return `<div class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner">${icon('home')}<div>
         <strong>House tax ${n < 0 ? `overdue · was due ${dateLabel(d.date)}` : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'} · ${dateLabel(d.date)}`}</strong>
-        <span>${esc(d.label)}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}${no ? ` · Assessment No. ${esc(no)}` : ''} · tap to mark it paid</span></div></a>`;
+        <span>${esc(d.label)}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}${no ? ` · Assessment No. ${esc(no)}` : ''}</span>
+        <div class="row-btns">
+          ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${no ? ` data-copy="${esc(no)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
+          <button type="button" class="btn sm ghost" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">Mark paid</button>
+          <a class="btn sm ghost" href="#/dues">Details</a>
+        </div></div></div>`;
     }).join('');
   }
   return taxDues().filter(d => daysUntil(d.date) <= taxDueDays()).map(d => {
@@ -1187,7 +1205,7 @@ function taxTable() {
       <td class="num stack-full"><div class="row-btns end">
         <button class="btn sm ghost" data-action="edit-tax" data-id="${esc(f.id)}">Edit</button>
         ${d ? `<button class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Paid ✓' : 'Mark paid'}</button>` : ''}
-        ${d && st.key !== 'paid' && wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(taxReminderText(f, d))}">${icon('chat')}<span>Remind</span></a>` : ''}
+        ${d && st.key !== 'paid' && wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" title="Send a courtesy reminder on WhatsApp" href="https://wa.me/${wa}?text=${encodeURIComponent(taxReminderText(f, d))}">${icon('chat')}<span>WhatsApp reminder</span></a>` : ''}
       </div></td></tr>`;
   }).join('');
   return `<div class="card"><div class="card-head"><h2>House tax by flat</h2><span class="muted">Reminders start ${taxDueDays()} days before each due date</span></div>
