@@ -129,6 +129,29 @@ test.describe('House tax · Pay online (GVMC)', () => {
     expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
   });
 
+  test('tapping the assessment number itself copies it and opens the GVMC page', async ({ app, page }) => {
+    const no = card(page).getByRole('link', { name: 'DEMO-1074-0302' });
+    await expect(no).toHaveAttribute('href', GVMC);
+    const popup = page.waitForEvent('popup');
+    await no.click();
+    const tab = await popup;
+    await expect(tab).toHaveURL(GVMC);
+    await tab.close();
+    await app.expectToast('Assessment number DEMO-1074-0302 copied — paste it on the payment page');
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
+  });
+
+  test("in the treasurer's House tax tab each flat's number opens the GVMC page too", async ({ app, page }) => {
+    await app.viewAs('demo-admin');
+    await app.duesTab('House tax');
+    const no = app.main.locator('tr[data-tax-row="201"]').getByRole('link', { name: 'DEMO-1074-0201' });
+    await expect(no).toHaveAttribute('href', GVMC);
+    const popup = page.waitForEvent('popup');
+    await no.click();
+    await expect(await popup).toHaveURL(GVMC);
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0201');
+  });
+
   test('without an assessment number it asks for one first and copies nothing', async ({ app, page }) => {
     await card(page).getByRole('button', { name: 'Edit', exact: true }).click();
     await app.field('Assessment number').fill('');
@@ -162,6 +185,8 @@ test.describe('House tax · Pay online (GVMC)', () => {
     await app.viewAs(RESIDENT);
     await app.go('dues');
     await expect(card(page).getByRole('link', { name: 'Pay online' })).toHaveCount(0);
+    await expect(card(page).getByRole('link', { name: 'DEMO-1074-0302' })).toHaveCount(0);
+    await expect(card(page).locator('dd').first()).toHaveText('DEMO-1074-0302');
   });
 });
 

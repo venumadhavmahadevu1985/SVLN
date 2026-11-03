@@ -997,6 +997,10 @@ const taxDueDays = () => Number(S.settings.houseTaxRemindDays) || 30;
 // It can't be pre-filled from a link, so Pay online copies the assessment number to paste there.
 const DEFAULT_TAX_PAY_URL = 'https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp';
 const taxPayUrl = () => typeof S.settings.houseTaxPayUrl === 'string' ? S.settings.houseTaxPayUrl : DEFAULT_TAX_PAY_URL;
+// The assessment number itself is a link: tapping it copies the number and opens the payment page.
+const taxNoLink = (no, tag = 'span') => !no ? '' : taxPayUrl()
+  ? `<a class="mono tax-no" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-copy="${esc(no)}" title="Copy and open the payment page">${esc(no)}</a>`
+  : `<${tag} class="mono">${esc(no)}</${tag}>`;
 
 function taxDues() {
   const list = (S.settings.houseTaxDue || []).filter(d => d.month && d.day), out = [];
@@ -1033,7 +1037,7 @@ function houseTaxCard(f) {
     <div class="card-head"><h2>House tax</h2>
       <button class="btn sm ${p.taxAssessmentNo ? 'ghost' : 'primary'}" data-action="edit-tax" data-id="${esc(f.id)}">${p.taxAssessmentNo || p.taxDoc ? 'Edit' : 'Add assessment number'}</button></div>
     <dl class="details">
-      <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? `<strong class="mono">${esc(p.taxAssessmentNo)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div>
+      <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo, 'strong') : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Tax document</dt><dd>${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">${icon('clip')}<span>${esc(p.taxDoc.name)}</span></button>` : '<span class="muted">Not uploaded</span>'}</dd></div>
     </dl>
     ${dues.length ? `<div class="list tax-dues">${dues.map(d => {
@@ -1164,7 +1168,7 @@ function taxTable() {
     return `<tr data-tax-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td>
       <td data-label="Owner">${esc(f.owner || '—')}</td>
-      <td data-label="Assessment no.">${p.taxAssessmentNo ? `<span class="mono">${esc(p.taxAssessmentNo)}</span>` : '<span class="muted">Not added</span>'}</td>
+      <td data-label="Assessment no.">${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo) : '<span class="muted">Not added</span>'}</td>
       <td data-label="Document">${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">View</button>` : '<span class="muted">—</span>'}</td>
       <td data-label="Status">${d ? `<span class="badge ${st.cls}">${st.text}</span><small class="muted block">${esc(taxDueText(d))}</small>` : '<span class="muted">—</span>'}</td>
       <td class="num stack-full"><div class="row-btns end">
