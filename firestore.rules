@@ -52,6 +52,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Individual alert for one flat, set by admins; only that flat and admins can read it.
+    match /flatAlerts/{id} {
+      allow read: if isAdmin() || isMyFlat(id);
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['title', 'text', 'tone', 'until', 'at', 'by'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 500
+        && request.resource.data.tone in ['info', 'warn', 'bad'];
+    }
+
     // House tax bill / receipt for a flat (a photo or PDF saved as text, under 1 MB): same privacy as flat details.
     match /taxDocs/{id} {
       allow read, delete: if isAdmin() || isMyFlat(id);

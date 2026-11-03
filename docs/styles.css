@@ -584,3 +584,7 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .usage-note { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
 .btn[data-action="usage-clear"] { white-space: normal; max-width: 100%; height: auto; min-height: 40px; text-align: left; }
 .usage-table .stack-title strong::before { content: none !important; }
+
+/* Individual flat alerts */
+.flat-alert .alert-text { white-space: pre-line; color: var(--text); font-size: 15px; }
+.btn.alert-on { border-color: var(--warn); color: var(--warn); }

@@ -22,12 +22,6 @@ test.describe('Reports — monthly statement', () => {
       'Total available ₹11,969',
       'Less: expenditure − ₹8,010',
       'Balance carried to Nov \'26 maintenance ₹3,959',
-      'Watchman / Security ₹4,000',
-      'Electricity (common areas) ₹1,565',
-      'Festival / Mamullu ₹1,400',
-      'Water (municipal / tanker) ₹645',
-      'GVMC charges ₹200',
-      'Housekeeping / Cleaning ₹200',
     ]);
     const head = app.main.locator('.st-head');
     await expect(head).toContainText('SVLN Paradise');
@@ -82,4 +76,11 @@ test.describe('Reports — annual summary', () => {
     await expect(app.main.locator('.st-annual td.neg').first()).toHaveText('-₹10');
     await expect(app.main.locator('.cat-bar', { hasText: 'Watchman / Security' })).toContainText('50%');
   });
+});
+
+test('the monthly statement has no "By category" section', async ({ app }) => {
+  await app.open('reports');
+  await expect(app.main.locator('.statement')).toBeVisible();
+  await expect(app.main.locator('.statement')).not.toContainText('By category');
+  await expect(app.main.locator('.statement .st-table.compact')).toHaveCount(0);
 });
