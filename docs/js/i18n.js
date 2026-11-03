@@ -104,6 +104,12 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
+  'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.':
+    'మీ అసెస్‌మెంట్ నంబర్ కాపీ అవుతుంది — చెల్లింపు పేజీలో పేస్ట్ చేయండి. చెల్లించిన తర్వాత ఇక్కడికి వచ్చి “చెల్లించినట్లు గుర్తించండి” నొక్కండి.',
+  'Add your assessment number first; you will need it on the payment page.': 'ముందుగా మీ అసెస్‌మెంట్ నంబర్ జోడించండి; చెల్లింపు పేజీలో అది అవసరం.',
+  'Opens when a flat taps Pay online. Leave empty to hide the button.': 'ఫ్లాట్ వారు “ఆన్‌లైన్‌లో చెల్లించండి” నొక్కినప్పుడు తెరుచుకుంటుంది. బటన్ దాచాలంటే ఖాళీగా వదలండి.',
+  'The payment link must start with https://': 'చెల్లింపు లింక్ https:// తో మొదలవ్వాలి',
 
   // reports
   'Monthly statement': 'నెలవారీ నివేదిక', 'Annual summary': 'వార్షిక సారాంశం', 'Month': 'నెల', 'Monthly': 'నెలవారీ', 'Total': 'మొత్తం',
@@ -181,6 +187,7 @@ const t = s => TE[s] || s;
 const PATTERNS = [
   [/^(\d+) (?:people|person) online now$/, (_, n) => `ఇప్పుడు ${n} మంది ఆన్‌లైన్‌లో`],
   [/^Flat (\S+)$/, (_, f) => `ఫ్లాట్ ${f}`],
+  [/^Assessment number (.+) copied — paste it on the payment page$/, (_, n) => `అసెస్‌మెంట్ నంబర్ ${n} కాపీ అయింది — చెల్లింపు పేజీలో పేస్ట్ చేయండి`],
   [/^\(Flat (\S+)\)$/, (_, f) => `(ఫ్లాట్ ${f})`],
   [/^Flat (\S+): all dues paid$/, (_, f) => `ఫ్లాట్ ${f}: అన్ని బకాయిలు చెల్లించారు`],
   [/^(₹[\d,]+) due for Flat (\S+)$/, (_, a, f) => `ఫ్లాట్ ${f}కు ${a} బకాయి`],
