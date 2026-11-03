@@ -51,6 +51,19 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Reports:** a monthly statement in the notebook format (receipts, balance brought forward, itemised expenditure, balance carried forward) and an annual summary. Both print to PDF.
 - **Staff:** watchman and other staff with mobile, working hours and duties (visible to every flat). The admin taps **Pay salary** to record the month's salary (with bonus or advance), which adds the expense and creates a **pay slip** to send on WhatsApp, copy or print.
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
+- **Split expenses:** one-off costs such as a borewell repair or painting, shared by the flats (Dues → Split expenses → **Split an expense**). Enter what it is for, the total and the category. Then split it equally, by flat area, or by typing each share (0 leaves a flat out); the shares must add up to the total. It can be paid at once or in **2–12 monthly instalments** from a first due date, and a flat may still pay the whole balance at once. Payments fill the earliest instalment first. One tick also adds the cost to Expenses. Each flat sees its share, the instalment schedule, what it has paid and how much the society has collected on My flat, with a banner on Home while anything is pending. The treasurer records payments, sees who has paid, and copies or sends WhatsApp reminders. Money received is counted in the balance and listed in the monthly statement as *Split expense collected: …*.
+- **Costs paid by an owner:** if a flat owner paid for something for the building themselves, they tap **Send a cost** on My flat. They give what it was for, the amount, the date, optional details and an optional bill photo or PDF. The treasurer sees it on Home and at the top of Dues → Split expenses and can view the bill. **Approve & split** opens the split form already filled in, and the treasurer decides how it is shared: equally, by area, or by typed shares, with optional instalments. **Not approve** asks for a reason the owner can see. On approval:
+  - the whole bill goes into Expenses as paid to that flat;
+  - the owner's own share is recorded as paid, as an adjusted payment settled against their bill;
+  - the other flats pay their shares as usual.
+
+  So the fund pays the owner back the bill minus their share. The monthly statement shows the adjusted share on its own line, and the split-expense report says how the bill was settled. If the treasurer changes the owner's share later, the adjusted payment follows it. Deleting the split undoes everything: the request waits again, and the repayment and adjusted payment are removed. The repayment can't be deleted from Expenses on its own. An owner can withdraw a request while it is still waiting.
+- **Reports → Split expenses:** one printable statement per split expense, showing:
+  - what it was for and the date;
+  - who paid the bill;
+  - how it was shared and the instalments;
+  - total cost, collected so far and still to collect;
+  - each flat's share, paid, pending and status. Residents see only their own flat's row and the totals.
 - **Individual alerts:** the treasurer taps **Alert** on a flat (Dues → Flats & amount, or the House tax table) to show a banner only to that flat, at the top of Home and My flat. It has an optional title, a message, a style (Information / Reminder / Urgent) and an optional **Show until** date. One tap fills in the house tax message, and it can be removed any time. The treasurer's Home lists which flats have an alert on. Stored in `flatAlerts/{flatNo}`; only admins write, and only that flat and admins read.
 - **Usage (admins only):** a page showing visits, people, devices, installed-app use, most-tapped buttons, pages opened, recent visits and a per-person **click log** (Today, 7, 30 or 90 days). Every signed-in member's app opens go to `visits/` and taps to `clicks/` (sent in batches). Residents see a note that this is logged. **Clear entries older than 90 days** keeps it small.
 - **Telugu (తెలుగు):** the **తె** button in the header switches the app to Telugu, and **EN** switches back. Each phone remembers its own choice.
@@ -91,7 +104,8 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 |---|---|
 | `public/info` | name, address (shown on the sign-in page) |
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[], quickExpenses[], houseTaxDue[] {label, month, day}, houseTaxRemindDays, houseTaxPayUrl |
-| `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
+| `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues }, special { 'YYYY-MM': { levyId: split-expense money received that month } } |
+| `levies/{id}` | title, category, total, date, split (equal / area / custom), shares { flatNo: ₹ }, instalments (1–12), dueDate (first instalment), note, expenseId — split expenses; members read, admins write |
 | `flats/{flatNo}` | owner, sqft, override |
 | `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxPenalty, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
 | `taxDocs/{flatNo}` | name, type, data (data URL under 1 MB) — the house tax bill (private, like flatProfiles) |
@@ -100,7 +114,9 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `clicks/{id}` | uid, name, flatId, role, at, events[] {t, route, label, action} (max 100 per batch; admins read/clear) |
 | `presence/{uid}` | name, role, flatId, online, lastSeen (server time) — who is online now |
 | `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path}; salary payments also have `payslip` {staffId, month, salary, extra, deductions, note, name, role, phone, duties[]} |
-| `payments/{id}` | flatId, month, amount, paidOn, mode, ref |
+| `claims/{id}` | flatId, uid, name, title, amount, date, note, hasBill, status (pending / approved / rejected), reason, levyId, at, decidedAt, decidedBy — costs paid by an owner; the flat creates (waiting only) and may withdraw while waiting, admins decide |
+| `claimBills/{id}` | flatId, name, type, data (data URL under 1 MB) — the bill for a request (same id) |
+| `payments/{id}` | flatId, month, amount, paidOn, mode, ref; a split-expense payment has `levyId` instead of `month`; the owner's adjusted share has `auto: true` (counted under `special[month]['<levyId>:adj']`) |
 | `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes. Staff are vendors with `kind: 'staff'` plus role, salary, shift, joinedOn, duties[], category, payMode, upi |
 | `notices/{id}` | title, body, date, pinned |
 | `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat |

@@ -598,3 +598,22 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .amt-box.penalty strong, .penalty-amt { color: var(--bad); }
 .amt-box.total strong { color: var(--warn); }
 @media (max-width: 420px) { .tax-amounts { grid-template-columns: 1fr 1fr; } .amt-box.total { grid-column: 1 / -1; } }
+
+/* Split expenses */
+.levy-progress { display: grid; gap: 4px; margin: 8px 0 12px; }
+.levy-progress .track { height: 8px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.levy-progress .track i { display: block; height: 100%; background: var(--ok); border-radius: inherit; }
+.levy-note { white-space: pre-line; margin: 4px 0 8px; }
+.share-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.share-field input { width: 100%; }
+.levy-form fieldset.radio-row { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.levy-form fieldset legend { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.levy-form .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.inst-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.inst-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.inst-list li span:first-child { flex: 1 1 140px; }
+.levy-mine .pending-row .badge { justify-self: start; width: auto; }
+.modal-card > header h2 { min-width: 0; overflow-wrap: anywhere; }
+.modal-card > header .icon-btn { flex: none; }
+.levy-info td.num { white-space: normal; overflow-wrap: anywhere; }
+.levy-info td:first-child { white-space: nowrap; vertical-align: top; }
