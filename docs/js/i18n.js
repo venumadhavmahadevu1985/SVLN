@@ -104,7 +104,7 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
-  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'This is a courtesy reminder: house tax is due.': 'ఇది మర్యాదపూర్వక రిమైండర్: ఇంటి పన్ను బకాయి ఉంది.',
   'Usage': 'వినియోగం', 'Dues / My flat': 'బకాయిలు / నా ఫ్లాట్', 'Who opens the app and what they tap. Visible only to admins.': 'యాప్ ఎవరు తెరుస్తున్నారు, ఏమి నొక్కుతున్నారు. అడ్మిన్‌లకు మాత్రమే కనిపిస్తుంది.',
   'Refresh': 'రిఫ్రెష్', 'Today': 'ఈరోజు', '7 days': '7 రోజులు', '30 days': '30 రోజులు', '90 days': '90 రోజులు',
   'Visits': 'సందర్శనలు', 'People': 'వ్యక్తులు', 'Taps': 'నొక్కినవి', 'Installed app': 'ఇన్‌స్టాల్ చేసిన యాప్', 'signed-in members': 'సైన్ ఇన్ అయిన సభ్యులు',

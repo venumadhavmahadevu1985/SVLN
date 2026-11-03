@@ -150,7 +150,7 @@
         "occupancy": "Owner",
         "taxAssessmentNo": "DEMO-1074-0201",
         "taxOwnerName": "Owner 201 (demo)",
-        "taxAmount": 1850,
+        "taxAmount": 0,
         "taxPaid": { "2026-11-15": { "paidOn": "2026-11-02", "amount": 1850, "receiptNo": "DEMO-R-77", "by": "Owner 201 (demo)" } },
         "phone": "90000 00201",
         "members": 3,
