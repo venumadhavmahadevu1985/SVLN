@@ -998,7 +998,7 @@ const DEFAULT_TAX_PAY_URL = 'https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDet
 const taxPayUrl = () => typeof S.settings.houseTaxPayUrl === 'string' ? S.settings.houseTaxPayUrl : DEFAULT_TAX_PAY_URL;
 // The assessment number itself is a link: tapping it copies the number and opens the payment page.
 const taxNoLink = (no, tag = 'span') => !no ? '' : taxPayUrl()
-  ? `<a class="mono tax-no" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-copy="${esc(no)}" title="Copy and open the payment page">${esc(no)}</a>`
+  ? `<a class="mono tax-no" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-pay data-copy="${esc(no)}" title="Copy and open the payment page">${esc(no)}</a>`
   : `<${tag} class="mono">${esc(no)}</${tag}>`;
 
 function taxDues() {
@@ -1049,7 +1049,7 @@ function taxNotice(f, d) {
     ${taxFacts(f).length ? `<p class="tax-facts">${taxFacts(f).map(x => `<span>${esc(x)}</span>`).join('')}</p>` : ''}
     <p class="muted">Please pay online, then tap Mark paid. Please ignore if already paid. Thank you!</p>
     <div class="row-btns">
-      ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
+      ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-pay${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
       <button type="button" class="btn sm ghost" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">Mark paid</button>
     </div></div>`;
 }
@@ -1094,7 +1094,7 @@ function houseTaxCard(f) {
     }).join('')}</div>`
       : `<p class="hint">${isAdmin() ? 'Set the house tax due dates in Settings to turn on reminders.' : 'The treasurer has not set the house tax due dates yet.'}</p>`}
     ${taxPayUrl() ? `<div class="tax-pay">
-      <a class="btn primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay online</span></a>
+      <a class="btn primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-pay${p.taxAssessmentNo ? ` data-copy="${esc(p.taxAssessmentNo)}"` : ''}>${icon('wallet')}<span>Pay online</span></a>
       <small class="muted">${p.taxAssessmentNo ? 'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.' : 'Add your assessment number first; you will need it on the payment page.'}</small></div>` : ''}
     <p class="hint">Visible only to this flat and the treasurer.</p>
   </div>`;
@@ -1192,7 +1192,7 @@ function taxBanners() {
         <strong>House tax ${n < 0 ? `overdue · was due ${dateLabel(d.date)}` : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'} · ${dateLabel(d.date)}`}</strong>
         <span>${esc(d.label)}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}${no ? ` · Assessment No. ${esc(no)}` : ''}</span>
         <div class="row-btns">
-          ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener"${no ? ` data-copy="${esc(no)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
+          ${taxPayUrl() ? `<a class="btn sm primary" href="${esc(taxPayUrl())}" target="_blank" rel="noopener" data-pay${no ? ` data-copy="${esc(no)}"` : ''}>${icon('wallet')}<span>Pay now</span></a>` : ''}
           <button type="button" class="btn sm ghost" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">Mark paid</button>
           <a class="btn sm ghost" href="#/dues">Details</a>
         </div></div></div>`;
@@ -2228,12 +2228,22 @@ const CHANGES = {
 };
 
 function bindEvents() {
-  // Links that copy something first (Pay online copies the assessment number); the link still opens.
-  document.addEventListener('click', e => {
-    const a = e.target.closest('[data-copy]');
-    if (!a || !navigator.clipboard) return;
-    navigator.clipboard.writeText(a.dataset.copy)
-      .then(() => toast(`Assessment number ${a.dataset.copy} copied — paste it on the payment page`)).catch(() => {});
+  // Pay links copy the assessment number first. In a browser the payment page opens in a new tab;
+  // in the installed app it opens in the app's own window (Android ✕ / iPhone Done brings you back),
+  // because the GVMC page refuses to be shown inside another site.
+  document.addEventListener('click', async e => {
+    const a = e.target.closest('a[data-pay]');
+    if (!a) return;
+    const inApp = isInstalled();
+    if (inApp) e.preventDefault();
+    const no = a.dataset.copy;
+    if (no && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(no);
+        toast(`Assessment number ${no} copied — paste it on the payment page`);
+      } catch { /* clipboard blocked: the number is shown on the page */ }
+    }
+    if (inApp) location.assign(a.href);
   });
   document.addEventListener('click', async e => {
     const el = e.target.closest('[data-action]');

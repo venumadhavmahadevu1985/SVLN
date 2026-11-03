@@ -263,6 +263,27 @@ test.describe('House tax · Pay online (GVMC)', () => {
     expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0201');
   });
 
+  test('in the installed app, Pay now opens GVMC in the app window (no new tab) and Back returns', async ({ app, page }) => {
+    // Pretend to be the installed SVLN app (display-mode: standalone).
+    await page.addInitScript(() => {
+      const mm = window.matchMedia.bind(window);
+      window.matchMedia = (q: string) => q.includes('display-mode: standalone')
+        ? ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} } as any) : mm(q);
+    });
+    await page.reload();
+    await app.viewAs(RESIDENT);
+    await app.go('dues');
+    await expect(app.heading).toHaveText('Flat 302');
+    let opened = false;
+    page.on('popup', () => { opened = true; });
+    await card(page).getByRole('link', { name: 'Pay online' }).click();
+    await expect(page).toHaveURL(GVMC);
+    expect(opened).toBe(false);
+    expect((await page.evaluate(() => navigator.clipboard.readText())).trim()).toBe('DEMO-1074-0302');
+    await page.goBack();
+    await expect(app.heading).toBeVisible();
+  });
+
   test('without an assessment number it asks for one first and copies nothing', async ({ app, page }) => {
     await card(page).getByRole('button', { name: 'Edit', exact: true }).click();
     await app.field('Assessment number').fill('');
