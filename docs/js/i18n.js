@@ -104,7 +104,7 @@ const TE = {
   'This PDF is too large (max 650 KB). Upload a photo of the bill instead.': 'ఈ PDF చాలా పెద్దది (గరిష్ఠం 650 KB). బదులుగా బిల్లు ఫోటో అప్‌లోడ్ చేయండి.',
   'Upload a photo or a PDF of the tax bill.': 'పన్ను బిల్లు ఫోటో లేదా PDF అప్‌లోడ్ చేయండి.', 'This photo is too large. Try a smaller photo.': 'ఈ ఫోటో చాలా పెద్దది. చిన్న ఫోటో ప్రయత్నించండి.',
   'The tax document could not be found.': 'పన్ను పత్రం దొరకలేదు.',
-  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
+  'Pay online': 'ఆన్‌లైన్‌లో చెల్లించండి', 'Copy and open the payment page': 'కాపీ చేసి చెల్లింపు పేజీ తెరవండి', 'Online payment link': 'ఆన్‌లైన్ చెల్లింపు లింక్',
   'Copies your assessment number — paste it on the payment page. After paying, come back and tap Mark paid.':
     'మీ అసెస్‌మెంట్ నంబర్ కాపీ అవుతుంది — చెల్లింపు పేజీలో పేస్ట్ చేయండి. చెల్లించిన తర్వాత ఇక్కడికి వచ్చి “చెల్లించినట్లు గుర్తించండి” నొక్కండి.',
   'Add your assessment number first; you will need it on the payment page.': 'ముందుగా మీ అసెస్‌మెంట్ నంబర్ జోడించండి; చెల్లింపు పేజీలో అది అవసరం.',
