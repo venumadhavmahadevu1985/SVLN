@@ -6,7 +6,7 @@ import { barChart, donutChart } from './charts.js';
 import { getLang, setLang, startTelugu } from './i18n.js';
 import {
   esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
-  addDays, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
+  addDays, newId, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
 } from './util.js';
 
 // Technical fallbacks for settings fields that may be missing (not society data).
@@ -295,6 +295,7 @@ const NAV = [
   ['staff', 'Staff', 'people'],
   ['vendors', 'Vendors', 'tool'],
   ['notices', 'Notices', 'megaphone'],
+  ['usage', 'Usage', 'chart', true],
   ['settings', 'Settings', 'gear', true],
 ];
 const navItems = () => NAV.filter(n => !n[3] || isAdmin());
@@ -403,18 +404,147 @@ async function stopPresence(markOffline = true) {
   S.online = null;
 }
 
+// ---------- usage log ----------
+// Every signed-in member's app opens (visits/) and taps (clicks/, sent in batches) are kept so admins
+// can see how the app is used on the Usage page. Only admins can read them (firestore.rules).
+const USAGE_FLUSH_MS = 20_000, USAGE_BATCH = 50;
+const usage = { buf: [], timer: null };
+
+function deviceName() {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : 'Other';
+  const app = /WhatsApp|FBAN|FBAV|Instagram|; wv\)/.test(ua) ? 'in-app browser' : /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
+    : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'browser';
+  return `${os} · ${app}`;
+}
+const whoFields = () => ({ uid: S.user.uid, name: S.user.name || S.user.email || '', flatId: S.user.flatId || null, role: S.user.role });
+const isMemberUser = () => !!S.user && ['admin', 'resident'].includes(S.user.role);
+
+function logVisit() {
+  if (!isMemberUser()) return;
+  store.put('visits', { id: newId(), ...whoFields(), at: new Date().toISOString(), device: deviceName(),
+    installed: isInstalled(), lang: getLang(), screen: `${screen.width}x${screen.height}` }).catch(() => {});
+}
+function logEvent(ev) {
+  if (!isMemberUser()) return;
+  usage.buf.push({ t: new Date().toISOString(), route: S.route, label: String(ev.label || '').slice(0, 80), action: String(ev.action || '').slice(0, 80) });
+  if (usage.buf.length >= USAGE_BATCH) flushUsage();
+  else if (!usage.timer) usage.timer = setTimeout(flushUsage, USAGE_FLUSH_MS);
+}
+function flushUsage() {
+  clearTimeout(usage.timer); usage.timer = null;
+  if (!usage.buf.length || !isMemberUser()) { usage.buf = []; return Promise.resolve(); }
+  const events = usage.buf.splice(0, usage.buf.length);
+  return store.put('clicks', { id: newId(), ...whoFields(), at: new Date().toISOString(), events }).catch(() => {});
+}
+function logClick(el) {
+  const label = (el.getAttribute('aria-label') || el.title || el.textContent || el.value || '').trim().replace(/\s+/g, ' ');
+  const href = el.getAttribute('href') || '';
+  logEvent({ label: label || el.tagName.toLowerCase(), action: el.dataset.action || (href.startsWith('#') || href.startsWith('http') ? href : '') });
+}
+
+const DAY_MS = 864e5;
+const pageName = hash => { const n = NAV.find(x => '#/' + x[0] === hash); return n ? (n[0] === 'dues' ? 'Dues / My flat' : n[1]) : hash; };
+function viewUsage() {
+  if (!S.usage) {
+    loadUsage();
+    return '<div class="page-head"><div><h1>Usage</h1></div></div><div class="card">' + empty('Loading the usage log…') + '</div>';
+  }
+  const startOfToday = new Date(todayISO() + 'T00:00').toISOString();
+  const days = S.ui.usageDays || 7, since = days === 1 ? startOfToday : new Date(Date.now() - days * DAY_MS).toISOString();
+  const visits = S.usage.visits.filter(v => v.at >= since).sort((a, b) => b.at.localeCompare(a.at));
+  const events = S.usage.clicks.filter(c => c.at >= since)
+    .flatMap(c => (c.events || []).map(e => ({ ...e, uid: c.uid, name: c.name, flatId: c.flatId })))
+    .filter(e => e.t >= since).sort((a, b) => b.t.localeCompare(a.t));
+  const people = {};
+  for (const v of visits) {
+    const x = people[v.uid] ||= { name: v.name, flatId: v.flatId, role: v.role, visits: 0, taps: 0, last: v.at, device: v.device, installed: v.installed };
+    x.visits++;
+  }
+  for (const e of events) (people[e.uid] ||= { name: e.name, flatId: e.flatId, visits: 0, taps: 0, last: e.t }).taps++;
+  const rows = Object.entries(people).sort((a, b) => b[1].last.localeCompare(a[1].last));
+  const who = S.ui.usageWho || 'all', shown = events.filter(e => who === 'all' || e.uid === who).slice(0, 200);
+  const top = {};
+  for (const e of events) if (e.label !== 'Opened page') top[e.label] = (top[e.label] || 0) + 1;
+  const pages = {};
+  for (const e of events) if (e.label === 'Opened page') pages[e.action] = (pages[e.action] || 0) + 1;
+  const whoLabel = x => `${esc(x.name || 'Member')}${x.flatId ? ` · Flat ${esc(x.flatId)}` : x.role === 'admin' ? ' · Admin' : ''}`;
+  const time = iso => dateTimeLabel(iso);
+  return `
+    <div class="page-head"><div><h1>Usage</h1><p class="muted">Who opens the app and what they tap. Visible only to admins.</p></div>
+      <div class="actions"><button class="btn ghost" data-action="usage-refresh">Refresh</button></div></div>
+    <div class="seg" role="tablist">${[[1, 'Today'], [7, '7 days'], [30, '30 days'], [90, '90 days']].map(([d, l]) =>
+      `<button role="tab" aria-selected="${days === d}" class="${days === d ? 'active' : ''}" data-action="usage-days" data-days="${d}">${l}</button>`).join('')}</div>
+    <section class="kpis">
+      ${kpi('Visits', String(visits.length), `Today: ${S.usage.visits.filter(v => v.at >= startOfToday).length}`)}
+      ${kpi('People', String(new Set(visits.map(v => v.uid)).size), 'signed-in members')}
+      ${kpi('Taps', String(events.filter(e => e.label !== 'Opened page').length), `Pages opened: ${events.filter(e => e.label === 'Opened page').length}`)}
+      ${kpi('Installed app', String(new Set(visits.filter(v => v.installed).map(v => v.uid)).size), 'people using the SVLN app')}
+    </section>
+    <div class="card"><div class="card-head"><h2>People</h2></div>
+      ${rows.length ? `<div class="table-scroll"><table class="stack usage-table"><thead><tr><th>Person</th><th>Visits</th><th>Taps</th><th>Last seen</th><th>Device</th></tr></thead><tbody>
+        ${rows.map(([uid, x]) => `<tr data-usage-uid="${esc(uid)}"><td class="stack-title"><strong>${whoLabel(x)}</strong></td>
+          <td class="num" data-label="Visits">${x.visits}</td><td class="num" data-label="Taps">${x.taps}</td>
+          <td data-label="Last seen">${time(x.last)}</td><td data-label="Device">${esc(x.device || '—')}${x.installed ? ' · app' : ''}</td></tr>`).join('')}
+      </tbody></table></div>` : empty('No visits in this period.')}</div>
+    <section class="grid-2">
+      <div class="card"><div class="card-head"><h2>Most tapped</h2></div>
+        <ol class="usage-top">${Object.entries(top).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([l, n]) => `<li><span>${esc(l)}</span><strong>${n}</strong></li>`).join('') || '<li class="muted">No taps yet.</li>'}</ol></div>
+      <div class="card"><div class="card-head"><h2>Pages opened</h2></div>
+        <ol class="usage-top">${Object.entries(pages).sort((a, b) => b[1] - a[1]).map(([l, n]) => `<li><span>${esc(pageName(l))}</span><strong>${n}</strong></li>`).join('') || '<li class="muted">No pages opened yet.</li>'}</ol></div>
+    </section>
+    <div class="card"><div class="card-head"><h2>Recent visits</h2></div>
+      <ul class="usage-log">${visits.slice(0, 50).map(v => `<li><time>${time(v.at)}</time><span><strong>${whoLabel(v)}</strong> · ${esc(v.device || '')}${v.installed ? ' · SVLN app' : ''}${v.lang === 'te' ? ' · Telugu' : ''}</span></li>`).join('') || '<li class="muted">No visits in this period.</li>'}</ul></div>
+    <div class="card"><div class="card-head"><h2>Click log</h2>
+        <label class="sr-only" for="usageWho">Show taps by</label>
+        <select id="usageWho" class="select-sm" data-change="usage-who"><option value="all">Everyone</option>
+          ${rows.map(([uid, x]) => `<option value="${esc(uid)}"${who === uid ? ' selected' : ''}>${esc(x.name || 'Member')}${x.flatId ? ` (${esc(x.flatId)})` : ''}</option>`).join('')}</select></div>
+      <ul class="usage-log clicks">${shown.map(e => `<li><time>${time(e.t)}</time><span><strong>${esc(e.name || 'Member')}${e.flatId ? ` · ${esc(e.flatId)}` : ''}</strong> · ${esc(e.label)}${e.action && e.label === 'Opened page' ? ` ${esc(e.action)}` : ''}<small class="muted"> on #/${esc(e.route || '')}</small></span></li>`).join('') || '<li class="muted">No taps in this period.</li>'}</ul></div>
+    <div class="card stack"><h2>Keep the log small</h2>
+      <p class="hint">Only signed-in members are counted. Clearing removes visits and taps older than 90 days.</p>
+      <div><button class="btn ghost" data-action="usage-clear">Clear entries older than 90 days</button></div></div>`;
+}
+
+async function loadUsage() {
+  if (usage.loading) return;
+  usage.loading = true;
+  try {
+    await flushUsage();
+    const since = new Date(Date.now() - 90 * DAY_MS).toISOString();
+    const [visits, clicks] = await Promise.all([store.list('visits', ['at', '>=', since]), store.list('clicks', ['at', '>=', since])]);
+    S.usage = { visits, clicks };
+  } catch (err) {
+    console.error(err);
+    S.usage = { visits: [], clicks: [] };
+    toast(friendlyError(err), 'bad');
+  } finally { usage.loading = false; }
+  if (S.route === 'usage') rerender();
+}
+
+async function clearOldUsage() {
+  const cutoff = new Date(Date.now() - 90 * DAY_MS).toISOString();
+  let n = 0;
+  for (const col of ['visits', 'clicks']) {
+    for (const d of await store.list(col, ['at', '<', cutoff])) { await store.remove(col, d.id); n++; }
+  }
+  await audit('delete', 'usage', 'old', `Cleared ${n} usage entr${n === 1 ? 'y' : 'ies'} older than 90 days`);
+  S.usage = null;
+  await refresh(`Cleared ${n} old entr${n === 1 ? 'y' : 'ies'}`);
+}
+
 // ---------- routing ----------
 const VIEWS = {
   dashboard: viewDashboard, expenses: viewExpenses, dues: viewDues, reports: viewReports,
-  staff: viewStaff, vendors: viewVendors, notices: viewNotices, settings: viewSettings,
+  staff: viewStaff, vendors: viewVendors, notices: viewNotices, usage: viewUsage, settings: viewSettings,
 };
 
 function route() {
   if (!S.user || !['admin', 'resident'].includes(S.user.role) || !S.hasSettings) return;
   let r = location.hash.replace(/^#\/?/, '') || 'dashboard';
-  if (!VIEWS[r] || (r === 'settings' && !isAdmin())) r = 'dashboard';
+  if (!VIEWS[r] || (NAV.find(n => n[0] === r)?.[3] && !isAdmin())) r = 'dashboard';
   const changed = r !== S.route;
   S.route = r;
+  if (changed) logEvent({ label: 'Opened page', action: '#/' + r });
   rerender();
   if (changed) { window.scrollTo(0, 0); $view.focus({ preventScroll: true }); }
 }
@@ -974,7 +1104,8 @@ function flatDetailsCard(f) {
       <button class="btn sm ${p ? 'ghost' : 'primary'}" data-action="edit-profile" data-id="${esc(f.id)}">${p ? 'Edit details' : 'Add details'}</button></div>
     ${completenessBlock(f)}
     ${isAdmin() ? `<div class="logins-box"><span class="pc-title">Logins for this flat</span>${loginsHtml(f.id)}</div>`
-      : `<p class="login-note">You're signed in as <strong>${esc(S.user.name || '')}</strong>${S.user.email ? ` (${esc(S.user.email)})` : ''}. Family members can sign in with their own accounts; the treasurer links them to this flat.</p>`}
+      : `<p class="login-note">You're signed in as <strong>${esc(S.user.name || '')}</strong>${S.user.email ? ` (${esc(S.user.email)})` : ''}. Family members can sign in with their own accounts; the treasurer links them to this flat.</p>
+        <p class="usage-note">Visits and taps in the app are logged so the treasurer can see how it is used.</p>`}
     ${p ? `<dl class="details">
         ${item('Owner', esc(f.owner))}${item('Living here', esc(p.occupancy))}${item('Tenant', esc(p.residentName))}
         ${item('Mobile', tel(p.phone))}${item('Other phone', tel(p.altPhone))}${item('Email', esc(p.email))}
@@ -1220,12 +1351,15 @@ function taxTable() {
   const rows = S.db.flats.map(f => {
     const p = S.db.flatProfiles[f.id] || {}, d = taxFocus(f.id), st = d && taxStatus(f.id, d);
     const wa = waNumber(p.phone);
+    // Only what the flat owes now: unpaid instalments that are due or overdue (₹0 when nothing is due).
+    const owing = taxReminders(f.id), dueNow = owing.length * taxAmount(f.id), late = owing.some(x => daysUntil(x.date) < 0);
     return `<tr data-tax-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td>
       <td data-label="Owner">${esc(f.owner || '—')}</td>
       <td data-label="Assessment no.">${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo) : '<span class="muted">Not added</span>'}${p.taxOwnerName ? `<small class="muted block">${esc(p.taxOwnerName)}</small>` : ''}</td>
       <td data-label="Document">${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">View</button>` : '<span class="muted">—</span>'}</td>
-      <td data-label="Status">${d ? `<span class="badge ${st.cls}">${st.text}</span><small class="muted block">${esc(taxDueText(d))}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}</small>` : '<span class="muted">—</span>'}</td>
+      <td data-label="Due amount" class="tax-due-cell">${!owing.length ? '<span class="muted">₹0</span>'
+        : dueNow ? `<strong class="due-amt${late ? ' late' : ''}">${money(dueNow)}</strong>` : '<span class="muted">Amount not added</span>'}</td>
       <td class="num stack-full"><div class="row-btns end">
         <button class="btn sm ghost" data-action="edit-tax" data-id="${esc(f.id)}">Edit</button>
         ${d ? `<button class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Paid ✓' : 'Mark paid'}</button>` : ''}
@@ -1233,7 +1367,7 @@ function taxTable() {
       </div></td></tr>`;
   }).join('');
   return `<div class="card"><div class="card-head"><h2>House tax by flat</h2><span class="muted">Reminders start ${taxDueDays()} days before each due date</span></div>
-    <div class="table-scroll"><table class="stack tax-table"><thead><tr><th>Flat</th><th>Owner</th><th>Assessment no.</th><th>Document</th><th>Status</th><th></th></tr></thead>
+    <div class="table-scroll"><table class="stack tax-table"><thead><tr><th>Flat</th><th>Owner</th><th>Assessment no.</th><th>Document</th><th>Due amount</th><th></th></tr></thead>
     <tbody>${rows || `<tr><td colspan="6">${empty('No flats yet.')}</td></tr>`}</tbody></table></div></div>`;
 }
 
@@ -1851,7 +1985,7 @@ function viewSettings() {
 }
 
 const ENTITY_LABELS = {
-  flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
+  usage: 'usage log', flats: 'flat', flatProfiles: 'flat details', expenses: 'expense', payments: 'payment', vendors: 'vendor',
   notices: 'notice', meta: 'settings', users: 'member', all: 'data',
 };
 
@@ -2052,11 +2186,14 @@ const ACTIONS = {
   nav(ds, el) { closeModal(); location.hash = el.getAttribute('href'); },
   print() { window.print(); },
   lang: () => { setLang(getLang() === 'te' ? 'en' : 'te'); location.reload(); },
-  'sign-out': async () => { await stopPresence(); return store.signOut(); },
+  'sign-out': async () => { await flushUsage(); await stopPresence(); return store.signOut(); },
   'login-google': () => store.signInGoogle(),
 
   'add-expense': () => openModal('Add expense', expenseForm(), { onSubmit: fd => submitExpense(fd) }),
   'quick-expense': ds => openQuickExpense(quickList()[+ds.i]),
+  'usage-days': ds => { S.ui.usageDays = +ds.days; rerender(); },
+  'usage-refresh': () => { S.usage = null; rerender(); },
+  'usage-clear': () => clearOldUsage(),
   'view-expense': ds => showExpense(ds.id),
   'edit-expense': ds => {
     const e = S.db.expenses.find(x => x.id === ds.id);
@@ -2219,6 +2356,7 @@ const FORMS = {
 const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
   'spend-view': v => { S.ui.spendView = v; rerender(); },
+  'usage-who': v => { S.ui.usageWho = v; rerender(); },
   'demo-account': v => { S.ui.reportMonth = null; S.ui.spendView = null; store.switchAccount(v); },
   async import(_, input) {
     const file = input.files[0];
@@ -2228,6 +2366,13 @@ const CHANGES = {
 };
 
 function bindEvents() {
+  // Usage log: every tap on a button, link or tab (captured before the page reacts to it).
+  document.addEventListener('click', e => {
+    const el = e.target.closest('button, a, [role=tab], summary');
+    if (el) logClick(el);
+  }, true);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushUsage(); });
+  window.addEventListener('pagehide', () => { flushUsage(); });
   // Pay links copy the assessment number first. In a browser the payment page opens in a new tab;
   // in the installed app it opens in the app's own window (Android ✕ / iPhone Done brings you back),
   // because the GVMC page refuses to be shown inside another site.
@@ -2294,11 +2439,15 @@ async function start() {
   if (!S.hasSettings) return isAdmin() ? renderSetup() : renderNotReady();
   document.body.classList.remove('bare');
   renderChrome();
+  await flushUsage();
+  S.usage = null;
+  logVisit();
   route();
   startPresence();
 }
 
 async function onAuthChange(fbUser) {
+  if (S.user) await flushUsage();   // the previous person's taps are saved under their name
   if (!fbUser) { S.user = null; return renderLogin(); }
   let prof = await store.get('users', fbUser.uid);
   S.user = { uid: fbUser.uid, email: fbUser.email, name: fbUser.displayName || fbUser.email };

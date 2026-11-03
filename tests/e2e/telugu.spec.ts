@@ -15,7 +15,7 @@ test.describe('Telugu language option', () => {
     await expect(app.heading).toHaveText('Overview');
     await toTelugu(page);
     await expect(langBtn(page)).toHaveText('EN');
-    await expect(page.locator('#nav a')).toHaveText(['హోమ్', 'ఖర్చులు', 'బకాయిలు', 'నివేదికలు', 'సిబ్బంది', 'వెండర్లు', 'ప్రకటనలు', 'సెట్టింగ్‌లు']);
+    await expect(page.locator('#nav a')).toHaveText(['హోమ్', 'ఖర్చులు', 'బకాయిలు', 'నివేదికలు', 'సిబ్బంది', 'వెండర్లు', 'ప్రకటనలు', 'వినియోగం', 'సెట్టింగ్‌లు']);
     await expect(app.kpi('చేతిలో ఉన్న నిల్వ')).toHaveText('₹3,959');
     await expect(app.main.locator('#onlineNow')).toContainText('ఇప్పుడు 3 మంది ఆన్‌లైన్‌లో');
     await expect(app.main.locator('#spendView option').first()).toHaveText('నవంబర్ 2026');

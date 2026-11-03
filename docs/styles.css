@@ -570,3 +570,17 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .tax-notice p { margin: 6px 0 0; }
 .tax-notice .tax-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 600; }
 .tax-notice .row-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.due-amt.late { color: var(--bad); }
+.tax-table .due-amt { font-size: 16px; }
+
+/* Usage page */
+.usage-top { list-style: none; margin: 0; padding: 0; }
+.usage-top li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.usage-top li:last-child { border-bottom: 0; }
+.usage-log { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+.usage-log li { display: grid; grid-template-columns: 130px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.usage-log time { color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) { .usage-log li { grid-template-columns: 1fr; gap: 2px; } }
+.usage-note { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.btn[data-action="usage-clear"] { white-space: normal; max-width: 100%; height: auto; min-height: 40px; text-align: left; }
+.usage-table .stack-title strong::before { content: none !important; }

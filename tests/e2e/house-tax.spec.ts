@@ -339,15 +339,19 @@ test.describe('House tax · treasurer', () => {
     await app.duesTab('House tax');
     const row = (id: string) => app.main.locator(`tr[data-tax-row="${id}"]`);
     await expect(row('201')).toContainText('DEMO-1074-0201');
-    await expect(row('201').locator('.badge')).toHaveText('Paid ₹1,850 on 2 Nov 2026');
-    await expect(row('302').locator('.badge')).toHaveText('Due in 10 days');
+    // The due-amount column shows only what is owed now: no instalment names, dates or 'Paid on'.
+    const dueCell = (id: string) => row(id).locator('td.tax-due-cell');
+    await expect(dueCell('201')).toHaveText('₹0');
+    await expect(dueCell('302')).toHaveText('₹1,700');
+    await expect(dueCell('101')).toHaveText('Amount not added');
+    await expect(app.main.locator('table.tax-table')).not.toContainText(/half-year|Paid on|Paid ₹/);
     await expect(row('101')).toContainText('Not added');
 
     await row('302').getByRole('button', { name: 'Mark paid' }).click();
     await app.field('Amount (₹)').fill('1700');
     await app.submitModal();
     await app.expectToast('House tax marked paid');
-    await expect(row('302').locator('.badge')).toHaveText('Paid ₹1,700 on 5 Nov 2026');
+    await expect(dueCell('302')).toHaveText('₹0');
 
     // Undo 201's payment: it has a phone number, so a WhatsApp reminder appears.
     await row('201').getByRole('button', { name: 'Paid ✓' }).click();
