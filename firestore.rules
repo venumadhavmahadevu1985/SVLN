@@ -38,13 +38,17 @@ service cloud.firestore {
       allow read: if isAdmin() || isMyFlat(id);
       allow create, update: if isAdmin() || (isMyFlat(id) && request.resource.data.keys().hasOnly([
         'occupancy', 'residentName', 'phone', 'altPhone', 'email', 'members', 'vehicles',
-        'emergencyName', 'emergencyPhone', 'family', 'taxAssessmentNo', 'taxDoc', 'taxPaid',
+        'emergencyName', 'emergencyPhone', 'family', 'taxAssessmentNo', 'taxDoc', 'taxPaid', 'taxOwnerName', 'taxAmount',
         'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
         && (!('family' in request.resource.data)
             || (request.resource.data.family is list && request.resource.data.family.size() <= 20))
         && (!('taxAssessmentNo' in request.resource.data)
             || (request.resource.data.taxAssessmentNo is string && request.resource.data.taxAssessmentNo.size() <= 40))
-        && (!('taxPaid' in request.resource.data) || request.resource.data.taxPaid is map));
+        && (!('taxPaid' in request.resource.data) || request.resource.data.taxPaid is map)
+        && (!('taxOwnerName' in request.resource.data)
+            || (request.resource.data.taxOwnerName is string && request.resource.data.taxOwnerName.size() <= 100))
+        && (!('taxAmount' in request.resource.data)
+            || (request.resource.data.taxAmount is number && request.resource.data.taxAmount >= 0 && request.resource.data.taxAmount <= 1000000)));
       allow delete: if isAdmin();
     }
 

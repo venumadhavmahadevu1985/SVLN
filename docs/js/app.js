@@ -1026,23 +1026,32 @@ const taxDueText = d => `${d.label} · due ${dateLabel(d.date)}`;
 // The due that matters now for a flat: the oldest unpaid within the window, else the next one.
 const taxFocus = flatId => taxReminders(flatId)[0] || taxDues().find(d => d.date >= todayISO()) || taxDues().slice(-1)[0];
 
+// Instalment amount a flat noted from its GVMC bill (0 when not known yet).
+const taxAmount = flatId => Number(S.db.flatProfiles[flatId]?.taxAmount) || 0;
+const taxAmountText = flatId => taxAmount(flatId) ? money(taxAmount(flatId)) : '';
+
 function taxReminderText(f, d) {
   const p = S.db.flatProfiles[f.id] || {}, who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
-  return `Namaste ${who}, reminder: house tax${p.taxAssessmentNo ? ` (Assessment No. ${p.taxAssessmentNo})` : ''} for ${d.label} is due on ${dateLabel(d.date)}. After paying, please mark it paid in the SVLN app: ${siteLink()}`;
+  return `Namaste ${who}, reminder: house tax${p.taxAssessmentNo ? ` (Assessment No. ${p.taxAssessmentNo})` : ''} for ${d.label}${taxAmount(f.id) ? ` (${money(taxAmount(f.id))})` : ''} is due on ${dateLabel(d.date)}. After paying, please mark it paid in the SVLN app: ${siteLink()}`;
 }
 
 function houseTaxCard(f) {
   const p = S.db.flatProfiles[f.id] || {}, dues = taxDues();
+  const owing = taxReminders(f.id), dueNow = owing.length * taxAmount(f.id);
   return `<div class="card house-tax">
     <div class="card-head"><h2>House tax</h2>
       <button class="btn sm ${p.taxAssessmentNo ? 'ghost' : 'primary'}" data-action="edit-tax" data-id="${esc(f.id)}">${p.taxAssessmentNo || p.taxDoc ? 'Edit' : 'Add assessment number'}</button></div>
     <dl class="details">
       <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo, 'strong') : '<span class="muted">Not added yet</span>'}</dd></div>
+      <div><dt>Taxpayer name</dt><dd>${p.taxOwnerName ? esc(p.taxOwnerName) : '<span class="muted">Not added yet</span>'}</dd></div>
+      <div><dt>Tax per half-year</dt><dd>${taxAmount(f.id) ? `<strong>${money(taxAmount(f.id))}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div>
+      <div class="tax-due-now"><dt>Tax due now</dt><dd>${!owing.length ? '<span class="badge ok">Nothing due</span>'
+        : dueNow ? `<strong class="due-amt">${money(dueNow)}</strong>` : `<span class="muted">${owing.length} instalment${owing.length === 1 ? '' : 's'} due — add the amount</span>`}</dd></div>
       <div><dt>Tax document</dt><dd>${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">${icon('clip')}<span>${esc(p.taxDoc.name)}</span></button>` : '<span class="muted">Not uploaded</span>'}</dd></div>
     </dl>
     ${dues.length ? `<div class="list tax-dues">${dues.map(d => {
       const st = taxStatus(f.id, d);
-      return `<div class="pending-row" data-tax-due="${d.date}"><div class="row-main"><strong>${esc(d.label)}</strong><small>Due ${dateLabel(d.date)}</small></div>
+      return `<div class="pending-row" data-tax-due="${d.date}"><div class="row-main"><strong>${esc(d.label)}</strong><small>Due ${dateLabel(d.date)}${taxAmount(f.id) && st.key !== 'paid' ? ` · ${money(taxAmount(f.id))}` : ''}</small></div>
         <span class="badge ${st.cls}">${st.text}</span>
         <button type="button" class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Edit' : 'Mark paid'}</button></div>`;
     }).join('')}</div>`
@@ -1077,12 +1086,16 @@ function houseTaxModal(flatId) {
   const p = S.db.flatProfiles[flatId] || {};
   openModal(`House tax · Flat ${flatId}`, `<div class="form-grid">
     <label class="field span2"><span>Assessment number</span><input name="taxAssessmentNo" maxlength="40" autocomplete="off" value="${esc(p.taxAssessmentNo || '')}" placeholder="As printed on the tax bill"></label>
+    <label class="field span2"><span>Taxpayer name (as on the GVMC bill)</span><input name="taxOwnerName" maxlength="100" autocomplete="off" value="${esc(p.taxOwnerName || '')}" placeholder="Owner name printed on the tax bill"></label>
+    <label class="field"><span>Tax per half-year (₹)</span><input type="number" name="taxAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(p.taxAmount || '')}"></label>
     <div class="field span2"><label for="taxDocIn"><span>Tax bill or receipt (photo or PDF)</span></label>
       <input id="taxDocIn" type="file" name="taxDoc" accept="image/*,application/pdf">
       ${p.taxDoc ? `<small class="muted">Current: ${esc(p.taxDoc.name)} · <label class="inline"><input type="checkbox" name="removeTaxDoc"> remove</label></small>` : ''}
     </div></div>`, {
     onSubmit: async fd => {
-      const doc = { ...p, id: flatId, taxAssessmentNo: String(fd.get('taxAssessmentNo') || '').trim() };
+      const doc = { ...p, id: flatId, taxAssessmentNo: String(fd.get('taxAssessmentNo') || '').trim(),
+        taxOwnerName: String(fd.get('taxOwnerName') || '').trim(), taxAmount: Math.round(Number(fd.get('taxAmount'))) || 0 };
+      if (doc.taxAmount < 0 || doc.taxAmount > 1000000) throw new Error('Enter the tax amount in rupees (0 to 10,00,000).');
       const file = fd.get('taxDoc'), now = new Date().toISOString();
       if (file && file.size) {
         const d = await readTaxDoc(file);
@@ -1103,7 +1116,7 @@ function taxPaidModal(flatId, date) {
   openModal(`House tax paid · Flat ${flatId}`, `<p class="muted">${esc(taxDueText(d))}${p.taxAssessmentNo ? ` · Assessment No. ${esc(p.taxAssessmentNo)}` : ''}</p>
     <div class="form-grid">
       <label class="field"><span>Paid on</span><input type="date" name="paidOn" required max="${todayISO()}" value="${esc(paid?.paidOn || todayISO())}"></label>
-      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="0" step="1" inputmode="numeric" value="${esc(paid?.amount ?? '')}"></label>
+      <label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="0" step="1" inputmode="numeric" value="${esc(paid?.amount ?? (taxAmount(flatId) || ''))}"></label>
       <label class="field span2"><span>Receipt / transaction number</span><input name="receiptNo" maxlength="60" value="${esc(paid?.receiptNo || '')}"></label>
       ${paid ? '<label class="inline span2"><input type="checkbox" name="unpaid"> Not paid after all (remove this payment)</label>' : ''}
     </div>`, {
@@ -1140,7 +1153,7 @@ function taxBanners() {
       const n = daysUntil(d.date);
       return `<a class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner" href="#/dues">${icon('home')}<div>
         <strong>House tax ${n < 0 ? `overdue · was due ${dateLabel(d.date)}` : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'} · ${dateLabel(d.date)}`}</strong>
-        <span>${esc(d.label)}${no ? ` · Assessment No. ${esc(no)}` : ''} · tap to mark it paid</span></div></a>`;
+        <span>${esc(d.label)}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}${no ? ` · Assessment No. ${esc(no)}` : ''} · tap to mark it paid</span></div></a>`;
     }).join('');
   }
   return taxDues().filter(d => daysUntil(d.date) <= taxDueDays()).map(d => {
@@ -1149,7 +1162,7 @@ function taxBanners() {
     const n = daysUntil(d.date);
     return `<a class="banner ${n < 0 ? 'bad' : 'warn'} tax-banner" href="#/dues" data-action="open-tax">${icon('home')}<div>
       <strong>House tax ${n < 0 ? 'overdue' : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'}`}: ${owing.length} of ${S.db.flats.length} flats not marked paid</strong>
-      <span>${esc(taxDueText(d))} · Flats ${owing.map(f => esc(f.id)).join(', ')}</span></div></a>`;
+      <span>${esc(taxDueText(d))}${sum(owing, f => taxAmount(f.id)) ? ` · ${money(sum(owing, f => taxAmount(f.id)))} still to pay` : ''} · Flats ${owing.map(f => esc(f.id)).join(', ')}</span></div></a>`;
   }).join('');
 }
 
@@ -1168,9 +1181,9 @@ function taxTable() {
     return `<tr data-tax-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td>
       <td data-label="Owner">${esc(f.owner || '—')}</td>
-      <td data-label="Assessment no.">${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo) : '<span class="muted">Not added</span>'}</td>
+      <td data-label="Assessment no.">${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo) : '<span class="muted">Not added</span>'}${p.taxOwnerName ? `<small class="muted block">${esc(p.taxOwnerName)}</small>` : ''}</td>
       <td data-label="Document">${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">View</button>` : '<span class="muted">—</span>'}</td>
-      <td data-label="Status">${d ? `<span class="badge ${st.cls}">${st.text}</span><small class="muted block">${esc(taxDueText(d))}</small>` : '<span class="muted">—</span>'}</td>
+      <td data-label="Status">${d ? `<span class="badge ${st.cls}">${st.text}</span><small class="muted block">${esc(taxDueText(d))}${taxAmount(f.id) ? ` · ${money(taxAmount(f.id))}` : ''}</small>` : '<span class="muted">—</span>'}</td>
       <td class="num stack-full"><div class="row-btns end">
         <button class="btn sm ghost" data-action="edit-tax" data-id="${esc(f.id)}">Edit</button>
         ${d ? `<button class="btn sm ${['due', 'overdue'].includes(st.key) ? 'primary' : 'ghost'}" data-action="tax-paid" data-id="${esc(f.id)}" data-date="${d.date}">${st.key === 'paid' ? 'Paid ✓' : 'Mark paid'}</button>` : ''}

@@ -16,7 +16,7 @@ test.describe('House tax · resident', () => {
     await expect(banner).toHaveCount(1);
     await expect(banner).toHaveClass(/warn/);
     await expect(banner).toContainText('House tax due in 10 days · 15 Nov 2026');
-    await expect(banner).toContainText('2nd half-year · Assessment No. DEMO-1074-0302');
+    await expect(banner).toContainText('2nd half-year · ₹1,700 · Assessment No. DEMO-1074-0302');
     await banner.click();
     await expect(app.heading).toHaveText('Flat 302');
     await expect(card(app.page)).toBeVisible();
@@ -52,6 +52,47 @@ test.describe('House tax · resident', () => {
     await app.submitModal();
     await app.expectToast('Payment removed');
     await expect(due(app.page, '2026-11-15').locator('.badge')).toHaveText('Due in 10 days');
+  });
+
+  test('shows the taxpayer name, tax per half-year and the tax due now', async ({ app }) => {
+    await app.go('dues');
+    const c = card(app.page), dd = (label: string) => c.locator('dl div', { has: app.page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd');
+    await expect(dd('Taxpayer name')).toHaveText('Owner 302 (demo)');
+    await expect(dd('Tax per half-year')).toHaveText('₹1,700');
+    await expect(dd('Tax due now')).toHaveText('₹1,700');
+    await expect(due(app.page, '2026-11-15')).toContainText('Due 15 Nov 2026 · ₹1,700');
+    // Mark paid starts with the amount filled in; after paying nothing is due.
+    await due(app.page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Amount (₹)')).toHaveValue('1700');
+    await app.submitModal();
+    await app.expectToast('House tax marked paid');
+    await expect(dd('Tax due now')).toHaveText('Nothing due');
+  });
+
+  test('the owner can add or change the taxpayer name and amount', async ({ app }) => {
+    await app.go('dues');
+    const c = card(app.page);
+    await c.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(app.field('Taxpayer name (as on the GVMC bill)')).toHaveValue('Owner 302 (demo)');
+    await app.field('Taxpayer name (as on the GVMC bill)').fill('K. Lakshmi');
+    await app.field('Tax per half-year (₹)').fill('2140');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    await expect(c).toContainText('K. Lakshmi');
+    await expect(c.locator('.due-amt')).toHaveText('₹2,140');
+    await app.go('dashboard');
+    await expect(app.main.locator('.tax-banner')).toContainText('2nd half-year · ₹2,140');
+  });
+
+  test('without an amount it says what is due and asks for the amount', async ({ app }) => {
+    await app.go('dues');
+    const c = card(app.page);
+    await c.getByRole('button', { name: 'Edit', exact: true }).click();
+    await app.field('Tax per half-year (₹)').fill('');
+    await app.submitModal();
+    await app.expectToast('House tax details saved');
+    await expect(c.locator('.tax-due-now dd')).toHaveText('1 instalment due — add the amount');
+    await expect(due(app.page, '2026-11-15').locator('small')).toHaveText('Due 15 Nov 2026');
   });
 
   test('change the assessment number and upload the tax bill (PDF), then view it', async ({ app, page }) => {
@@ -195,7 +236,7 @@ test.describe('House tax · treasurer', () => {
     await app.open();
     const banner = app.main.locator('.tax-banner');
     await expect(banner).toContainText('House tax due in 10 days: 7 of 8 flats not marked paid');
-    await expect(banner).toContainText('2nd half-year · due 15 Nov 2026 · Flats 101, 102, 202, 301, 302, 401, 402');
+    await expect(banner).toContainText('2nd half-year · due 15 Nov 2026 · ₹1,700 still to pay · Flats 101, 102, 202, 301, 302, 401, 402');
     await banner.click();
     await expect(app.heading).toHaveText('Maintenance dues');
     await expect(app.main.getByRole('tab', { name: 'House tax' })).toHaveAttribute('aria-selected', 'true');
@@ -226,7 +267,7 @@ test.describe('House tax · treasurer', () => {
     await expect(remind).toHaveAttribute('href', /^https:\/\/wa\.me\/919000000201\?text=/);
     const text = decodeURIComponent((await remind.getAttribute('href'))!.split('text=')[1]);
     expect(text).toContain('Owner 201 (demo) garu (Flat 201)');
-    expect(text).toContain('house tax (Assessment No. DEMO-1074-0201) for 2nd half-year is due on 15 Nov 2026');
+    expect(text).toContain('house tax (Assessment No. DEMO-1074-0201) for 2nd half-year (₹1,850) is due on 15 Nov 2026');
   });
 
   test('Settings: due dates drive the reminders (overdue turns red; none set turns them off)', async ({ app, page }) => {

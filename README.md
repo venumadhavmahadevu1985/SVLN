@@ -31,7 +31,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
   - **Online now** at the top: who is using the app right now, with their flat. It updates live, and anyone not seen for 2½ minutes or who closed the app drops off. Each member keeps their own `presence/{uid}`, stamped with the server time.
   - **Where the money went** opens on the current month; a picker switches to an earlier month or the whole financial year.
 - **Monthly bills quick links** (admins, on Home and Expenses): Watchman, Electricity Bill, GVMC and Municipal Water by default, with ✓ once added this month. Tapping one opens Add expense filled from the last such bill (amount, category, vendor, mode, with the month name updated). A staff member's role (Watchman) opens **Pay salary** instead. The list is editable under Settings → Society.
-- **House tax (per flat):** each flat keeps its **assessment number**, a photo or PDF of the **tax bill**, and **paid** status for each half-yearly instalment (paid on, amount, receipt number).
+- **House tax (per flat):** each flat keeps its **assessment number**, the **taxpayer name** as on the GVMC bill, the **tax per half-year** (shown as "Tax due now" and in reminders, pre-filled in Mark paid), a photo or PDF of the **tax bill**, and **paid** status for each half-yearly instalment (paid on, amount, receipt number).
   - **Settings → House tax** sets the two due dates and how many days before to remind (default 30). Reminders count from the month tracking started.
   - **Residents** see a reminder on Home (red once overdue) and a House tax card on My flat with **Mark paid**.
   - **The treasurer** sees "N of 8 flats not marked paid" on Home and a **Dues → House tax** tab listing every flat, with Mark paid and a WhatsApp **Remind**.
@@ -89,7 +89,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[], quickExpenses[], houseTaxDue[] {label, month, day}, houseTaxRemindDays, houseTaxPayUrl |
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues } |
 | `flats/{flatNo}` | owner, sqft, override |
-| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
+| `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
 | `taxDocs/{flatNo}` | name, type, data (data URL under 1 MB) — the house tax bill (private, like flatProfiles) |
 | `presence/{uid}` | name, role, flatId, online, lastSeen (server time) — who is online now |
 | `expenses/{id}` | date, category, description, vendor, amount, mode, paidBy, receipt {name, url, path}; salary payments also have `payslip` {staffId, month, salary, extra, deductions, note, name, role, phone, duties[]} |

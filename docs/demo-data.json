@@ -121,6 +121,8 @@
         "id": "302",
         "occupancy": "Owner",
         "taxAssessmentNo": "DEMO-1074-0302",
+        "taxOwnerName": "Owner 302 (demo)",
+        "taxAmount": 1700,
         "members": 4,
         "updatedAt": "2026-10-31T18:00:00.000Z",
         "updatedBy": "Flat 302 resident (demo)"
@@ -129,6 +131,8 @@
         "id": "201",
         "occupancy": "Owner",
         "taxAssessmentNo": "DEMO-1074-0201",
+        "taxOwnerName": "Owner 201 (demo)",
+        "taxAmount": 1850,
         "taxPaid": { "2026-11-15": { "paidOn": "2026-11-02", "amount": 1850, "receiptNo": "DEMO-R-77", "by": "Owner 201 (demo)" } },
         "phone": "90000 00201",
         "members": 3,

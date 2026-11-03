@@ -20,6 +20,7 @@ test.describe('Telugu language option', () => {
     await expect(app.main.locator('#onlineNow')).toContainText('ఇప్పుడు 3 మంది ఆన్‌లైన్‌లో');
     await expect(app.main.locator('#spendView option').first()).toHaveText('నవంబర్ 2026');
     await expect(app.main.locator('.tax-banner')).toContainText('ఇంటి పన్ను 10 రోజుల్లో గడువు');
+    await expect(app.main.locator('.tax-banner')).toContainText('రెండవ అర్ధ సంవత్సరం · గడువు 15 నవం 2026 · ఇంకా ₹1,700 చెల్లించాలి · ఫ్లాట్లు 101');
     await expect(page.locator('.site-credit')).toContainText('వెబ్‌సైట్ రూపొందించినవారు');
   });
 

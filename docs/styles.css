@@ -559,3 +559,4 @@ dialog::backdrop { background: rgb(30 22 10 / .5); }
 .house-tax .tax-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; }
 .house-tax .tax-pay small { flex: 1 1 200px; }
 a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; display: inline-flex; align-items: center; min-height: 36px; }
+.house-tax .due-amt { font-size: 18px; color: var(--warn, var(--text)); }
