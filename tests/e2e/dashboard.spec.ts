@@ -46,7 +46,7 @@ test.describe('Dashboard — treasurer', () => {
   });
 
   test('admin sees every section in the menu, including Settings', async ({ app }) => {
-    await expect(app.page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'Dues', 'Reports', 'Staff', 'Vendors', 'Notices', 'Settings']);
+    await expect(app.page.locator('#nav a')).toHaveText(['Home', 'Expenses', 'Dues', 'Reports', 'Staff', 'Vendors', 'Notices', 'Usage', 'Settings']);
   });
 
   test('menu links navigate and mark the current page', async ({ app }) => {

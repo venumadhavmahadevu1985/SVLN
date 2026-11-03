@@ -88,7 +88,10 @@ class DemoStore {
 
   async list(col, where) {
     let arr = Object.values(this.db[col] || {}).map(d => structuredClone(d));
-    if (where) arr = arr.filter(d => d[where[0]] === where[2]);
+    if (where) {
+      const [f, op, v] = where;
+      arr = arr.filter(d => op === '>=' ? d[f] >= v : op === '<' ? d[f] < v : d[f] === v);
+    }
     return arr;
   }
   async get(col, id) { const d = this.db[col]?.[id]; return d ? structuredClone(d) : null; }

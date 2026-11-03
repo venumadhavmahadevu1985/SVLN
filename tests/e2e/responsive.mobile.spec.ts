@@ -10,7 +10,7 @@ import type { Page } from '@playwright/test';
 //   - the header stays compact.
 
 const WIDTHS = [320, 390];
-const ADMIN_PAGES = ['dashboard', 'expenses', 'dues', 'reports', 'staff', 'vendors', 'notices', 'settings'];
+const ADMIN_PAGES = ['dashboard', 'expenses', 'dues', 'reports', 'staff', 'vendors', 'notices', 'usage', 'settings'];
 const RESIDENT_PAGES = ['dashboard', 'expenses', 'dues', 'reports', 'staff', 'vendors', 'notices'];
 
 async function layoutProblems(page: Page): Promise<string[]> {
@@ -103,6 +103,12 @@ for (const width of WIDTHS) {
         await app.main.getByRole('tab', { name: tab }).click();
         expect(await layoutProblems(page), `te dues ${tab}`).toEqual([]);
       }
+    });
+
+    test('Usage cards name the person without a Flat prefix', async ({ app, page }) => {
+      await app.open('usage');
+      const title = page.locator('main tr[data-usage-uid="demo-201"] .stack-title strong');
+      expect(await title.evaluate(el => getComputedStyle(el, '::before').content)).toBe('none');
     });
 
     test('Flats and Members show as cards, not cramped tables', async ({ app }) => {

@@ -18,6 +18,24 @@
     }
   ],
   "collections": {
+    "visits": [
+      { "id": "v1", "uid": "demo-201", "name": "Owner 201 (demo)", "flatId": "201", "role": "resident", "at": "2026-11-05T03:10:00.000Z", "device": "Android · Chrome", "installed": true, "lang": "te", "screen": "412x915" },
+      { "id": "v2", "uid": "demo-101", "name": "Flat 101 resident (demo)", "flatId": "101", "role": "resident", "at": "2026-11-04T14:30:00.000Z", "device": "iPhone · Safari", "installed": false, "lang": "en", "screen": "390x844" },
+      { "id": "v3", "uid": "demo-201", "name": "Owner 201 (demo)", "flatId": "201", "role": "resident", "at": "2026-11-02T12:00:00.000Z", "device": "Android · Chrome", "installed": true, "lang": "te", "screen": "412x915" },
+      { "id": "v-old", "uid": "demo-101", "name": "Flat 101 resident (demo)", "flatId": "101", "role": "resident", "at": "2026-07-01T10:00:00.000Z", "device": "iPhone · Safari", "installed": false, "lang": "en", "screen": "390x844" }
+    ],
+    "clicks": [
+      { "id": "c1", "uid": "demo-201", "name": "Owner 201 (demo)", "flatId": "201", "role": "resident", "at": "2026-11-05T03:12:00.000Z", "events": [
+        { "t": "2026-11-05T03:10:05.000Z", "route": "dashboard", "label": "Opened page", "action": "#/dashboard" },
+        { "t": "2026-11-05T03:10:20.000Z", "route": "dashboard", "label": "My flat", "action": "#/dues" },
+        { "t": "2026-11-05T03:10:21.000Z", "route": "dues", "label": "Opened page", "action": "#/dues" },
+        { "t": "2026-11-05T03:11:02.000Z", "route": "dues", "label": "Pay online", "action": "https://pgi.billdesk.com/pgidsk/pgmerc/gvmc/GVMCDetails.jsp" }
+      ] },
+      { "id": "c2", "uid": "demo-101", "name": "Flat 101 resident (demo)", "flatId": "101", "role": "resident", "at": "2026-11-04T14:35:00.000Z", "events": [
+        { "t": "2026-11-04T14:30:10.000Z", "route": "dashboard", "label": "Reports", "action": "#/reports" },
+        { "t": "2026-11-04T14:30:11.000Z", "route": "reports", "label": "Opened page", "action": "#/reports" }
+      ] }
+    ],
     "presence": [
       { "id": "demo-201", "name": "Owner 201 (demo)", "role": "resident", "flatId": "201", "online": true },
       { "id": "demo-101", "name": "Flat 101 resident (demo)", "role": "resident", "flatId": "101", "online": true }

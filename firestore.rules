@@ -89,6 +89,23 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
     }
 
+    // Usage log: members add their own app opens and taps; only admins can read or clear them.
+    match /visits/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if isMember() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'flatId', 'role', 'at', 'device', 'installed', 'lang', 'screen'])
+        && request.resource.data.at is string;
+      allow update: if false;
+    }
+    match /clicks/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if isMember() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'flatId', 'role', 'at', 'events'])
+        && request.resource.data.at is string
+        && request.resource.data.events is list && request.resource.data.events.size() <= 100;
+      allow update: if false;
+    }
+
     // Append-only activity log.
     match /auditLog/{id} {
       allow read: if isAdmin();

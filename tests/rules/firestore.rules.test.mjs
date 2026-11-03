@@ -247,3 +247,31 @@ describe('house tax', () => {
     await assertFails(setDoc(doc(as(null), 'taxDocs/101'), bill()));
   });
 });
+
+describe('usage log (visits and taps)', () => {
+  const visit = (uid, extra = {}) => ({ uid, name: 'x', flatId: '302', role: 'resident', at: '2026-11-05T04:30:00.000Z', device: 'Android · Chrome', installed: true, lang: 'en', screen: '412x915', ...extra });
+  const taps = (uid, n = 2) => ({ uid, name: 'x', flatId: '302', role: 'resident', at: '2026-11-05T04:30:00.000Z',
+    events: Array.from({ length: n }, (_, i) => ({ t: 'now', route: 'dashboard', label: 'Tap ' + i, action: '' })) });
+  test('members add their own entries but cannot read, change or delete them', async () => {
+    const db = as(RES);
+    await assertSucceeds(setDoc(doc(db, 'visits/v1'), visit(RES)));
+    await assertSucceeds(setDoc(doc(db, 'clicks/c1'), taps(RES)));
+    await assertFails(getDoc(doc(db, 'visits/v1')));
+    await assertFails(getDocs(collection(db, 'clicks')));
+    await assertFails(updateDoc(doc(db, 'visits/v1'), { device: 'y' }));
+    await assertFails(deleteDoc(doc(db, 'clicks/c1')));
+  });
+  test('cannot log in someone else\'s name, add extra fields, or send too many taps at once', async () => {
+    const db = as(RES);
+    await assertFails(setDoc(doc(db, 'visits/v2'), visit(OTHER)));
+    await assertFails(setDoc(doc(db, 'visits/v3'), visit(RES, { password: 'x' })));
+    await assertFails(setDoc(doc(db, 'clicks/c2'), taps(RES, 101)));
+    await assertFails(setDoc(doc(as(PENDING), 'visits/v4'), visit(PENDING)));
+    await assertFails(setDoc(doc(as(null), 'visits/v5'), visit('anon')));
+  });
+  test('admins can read and clear the log', async () => {
+    await assertSucceeds(setDoc(doc(as(RES), 'visits/v6'), visit(RES)));
+    await assertSucceeds(getDocs(collection(as(ADMIN), 'visits')));
+    await assertSucceeds(deleteDoc(doc(as(ADMIN), 'visits/v6')));
+  });
+});
