@@ -54,19 +54,19 @@ test.describe('House tax · resident', () => {
     await expect(due(app.page, '2026-11-15').locator('.badge')).toHaveText('Due in 10 days');
   });
 
-  test('shows the taxpayer name, tax per half-year and the tax due now', async ({ app }) => {
+  test('shows the taxpayer name and the due amount', async ({ app }) => {
     await app.go('dues');
     const c = card(app.page), dd = (label: string) => c.locator('dl div', { has: app.page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd');
     await expect(dd('Taxpayer name')).toHaveText('Owner 302 (demo)');
-    await expect(dd('Tax per half-year')).toHaveText('₹1,700');
-    await expect(dd('Tax due now')).toHaveText('₹1,700');
+    await expect(dd('Due amount')).toHaveText('₹1,700');
+    await expect(c.locator('dt', { hasText: /half-year|Tax due now/ })).toHaveCount(0);
     await expect(due(app.page, '2026-11-15')).toContainText('Due 15 Nov 2026 · ₹1,700');
     // Mark paid starts with the amount filled in; after paying nothing is due.
     await due(app.page, '2026-11-15').getByRole('button', { name: 'Mark paid' }).click();
     await expect(app.field('Amount (₹)')).toHaveValue('1700');
     await app.submitModal();
     await app.expectToast('House tax marked paid');
-    await expect(dd('Tax due now')).toHaveText('Nothing due');
+    await expect(dd('Due amount')).toHaveText('Nothing due');
   });
 
   test('the owner can add or change the taxpayer name and amount', async ({ app }) => {
@@ -75,7 +75,7 @@ test.describe('House tax · resident', () => {
     await c.getByRole('button', { name: 'Edit', exact: true }).click();
     await expect(app.field('Taxpayer name (as on the GVMC bill)')).toHaveValue('Owner 302 (demo)');
     await app.field('Taxpayer name (as on the GVMC bill)').fill('K. Lakshmi');
-    await app.field('Tax per half-year (₹)').fill('2140');
+    await app.field('Due amount (₹)').fill('2140');
     await app.submitModal();
     await app.expectToast('House tax details saved');
     await expect(c).toContainText('K. Lakshmi');
@@ -88,7 +88,7 @@ test.describe('House tax · resident', () => {
     await app.go('dues');
     const c = card(app.page);
     await c.getByRole('button', { name: 'Edit', exact: true }).click();
-    await app.field('Tax per half-year (₹)').fill('');
+    await app.field('Due amount (₹)').fill('');
     await app.submitModal();
     await app.expectToast('House tax details saved');
     await expect(c.locator('.tax-due-now dd')).toHaveText('1 instalment due — add the amount');

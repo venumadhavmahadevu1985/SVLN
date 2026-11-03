@@ -1044,9 +1044,9 @@ function houseTaxCard(f) {
     <dl class="details">
       <div><dt>Assessment number</dt><dd>${p.taxAssessmentNo ? taxNoLink(p.taxAssessmentNo, 'strong') : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Taxpayer name</dt><dd>${p.taxOwnerName ? esc(p.taxOwnerName) : '<span class="muted">Not added yet</span>'}</dd></div>
-      <div><dt>Tax per half-year</dt><dd>${taxAmount(f.id) ? `<strong>${money(taxAmount(f.id))}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div>
-      <div class="tax-due-now"><dt>Tax due now</dt><dd>${!owing.length ? '<span class="badge ok">Nothing due</span>'
-        : dueNow ? `<strong class="due-amt">${money(dueNow)}</strong>` : `<span class="muted">${owing.length} instalment${owing.length === 1 ? '' : 's'} due — add the amount</span>`}</dd></div>
+      <div class="tax-due-now"><dt>Due amount</dt><dd>${owing.length
+        ? (dueNow ? `<strong class="due-amt">${money(dueNow)}</strong>` : `<span class="muted">${owing.length} instalment${owing.length === 1 ? '' : 's'} due — add the amount</span>`)
+        : taxAmount(f.id) ? '<span class="badge ok">Nothing due</span>' : '<span class="muted">Not added yet</span>'}</dd></div>
       <div><dt>Tax document</dt><dd>${p.taxDoc ? `<button type="button" class="link-btn" data-action="view-tax-doc" data-id="${esc(f.id)}">${icon('clip')}<span>${esc(p.taxDoc.name)}</span></button>` : '<span class="muted">Not uploaded</span>'}</dd></div>
     </dl>
     ${dues.length ? `<div class="list tax-dues">${dues.map(d => {
@@ -1087,7 +1087,7 @@ function houseTaxModal(flatId) {
   openModal(`House tax · Flat ${flatId}`, `<div class="form-grid">
     <label class="field span2"><span>Assessment number</span><input name="taxAssessmentNo" maxlength="40" autocomplete="off" value="${esc(p.taxAssessmentNo || '')}" placeholder="As printed on the tax bill"></label>
     <label class="field span2"><span>Taxpayer name (as on the GVMC bill)</span><input name="taxOwnerName" maxlength="100" autocomplete="off" value="${esc(p.taxOwnerName || '')}" placeholder="Owner name printed on the tax bill"></label>
-    <label class="field"><span>Tax per half-year (₹)</span><input type="number" name="taxAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(p.taxAmount || '')}"></label>
+    <label class="field"><span>Due amount (₹)</span><input type="number" name="taxAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(p.taxAmount || '')}"></label>
     <div class="field span2"><label for="taxDocIn"><span>Tax bill or receipt (photo or PDF)</span></label>
       <input id="taxDocIn" type="file" name="taxDoc" accept="image/*,application/pdf">
       ${p.taxDoc ? `<small class="muted">Current: ${esc(p.taxDoc.name)} · <label class="inline"><input type="checkbox" name="removeTaxDoc"> remove</label></small>` : ''}
