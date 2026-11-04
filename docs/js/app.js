@@ -222,6 +222,7 @@ async function loadData() {
   const coll = meta.find(m => m.id === 'collections');
   S.collections = coll?.byMonth || {};
   S.special = coll?.special || {};
+  S.lastBackup = meta.find(m => m.id === 'backup') || null;
   if (isAdmin()) {
     // Totals saved before receipts were counted by dues month are rebuilt once.
     if (coll && coll.basis !== COLLECTION_BASIS) S.collections = await refreshCollectionTotals();
@@ -678,8 +679,7 @@ const lc = v => String(v || '').toLowerCase();
 // The latest expense for a quick link: description starting with the name wins, then the category.
 function lastQuickExpense(label, inMonth) {
   const l = lc(label), pool = S.db.expenses.filter(e => !inMonth || e.date.startsWith(inMonth));
-  const latest = arr => arr.sort((a, b) => byExpenseOrder(b, a))[0];
-  return latest(pool.filter(e => lc(e.description).startsWith(l))) || latest(pool.filter(e => lc(e.category).startsWith(l)));
+  return pool.filter(e => lc(e.description).startsWith(l) || lc(e.category).startsWith(l)).sort((a, b) => byExpenseOrder(b, a))[0];
 }
 const quickStaff = label => staffList().find(st => lc(st.role).startsWith(lc(label)) || lc(st.name).startsWith(lc(label)));
 
@@ -708,7 +708,10 @@ function openQuickExpense(label) {
     ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: last.amount,
         description: last.description.replace(new RegExp(`\\b(${MONTH_NAMES.join('|')})\\b`, 'g'), thisMonth) }
     : { description: label, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
-  openModal(`Add expense · ${label}`, expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
+  // Already added this month: say so, so the same bill is not entered twice by mistake.
+  const done = lastQuickExpense(label, curMonth());
+  openModal(`Add expense · ${label}`, (done ? `<div class="banner warn quick-dup">${icon('receipt')}<div><strong>Already added this month: ${money(done.amount)} on ${dateLabel(done.date)}</strong>
+    <span>${esc(done.description)}. Save only if this is another bill.</span></div></div>` : '') + expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
 }
 
 // ---------- expenses ----------
@@ -2462,6 +2465,7 @@ function viewSettings() {
     <div class="card stack">
       <h2>Data</h2>
       <p class="muted">Download a full backup, or import a data file (for example an earlier month from the notebook). Imported records with the same ID replace existing ones.</p>
+      ${backupStatus()}
       <div class="row-btns">
         <button class="btn ghost" data-action="backup">${icon('download')}<span>Download backup (JSON)</span></button>
         <label class="btn ghost">${icon('upload')}<span>Import data file</span><input type="file" accept="application/json,.json" data-change="import" hidden></label>
@@ -2500,6 +2504,33 @@ function backupJson() {
     flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses,
     payments: S.db.payments, levies: S.db.levies, claims: S.db.claims, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
+}
+
+// Daily backup: the first time a treasurer opens the app each day, the full backup is saved to that
+// phone or computer (Downloads). Can be turned off per device; meta/backup records the last one for every admin.
+const AUTO_BACKUP_KEY = 'svln-auto-backup', LAST_BACKUP_KEY = 'svln-last-backup';
+const backupName = () => `${fileSlug()}-backup-${todayISO()}.json`;
+// On by default on the real site; the demo leaves it off unless switched on (it has nothing worth keeping).
+const autoBackupOn = () => (lsGet(AUTO_BACKUP_KEY) || (store.demo ? 'off' : 'on')) === 'on';
+async function saveBackup(auto) {
+  download(backupName(), backupJson(), 'application/json');
+  lsSet(LAST_BACKUP_KEY, todayISO());
+  const doc = { id: 'backup', at: new Date().toISOString(), by: S.user.name, auto: !!auto };
+  S.lastBackup = doc;
+  try { await store.put('meta', doc); } catch { /* the file is saved even if this note is not */ }
+}
+async function dailyBackup() {
+  if (!isAdmin() || !autoBackupOn() || lsGet(LAST_BACKUP_KEY) === todayISO()) return;
+  try {
+    await saveBackup(true);
+    toast(`Today's backup saved: ${backupName()}`);
+  } catch (err) { console.error(err); }
+}
+function backupStatus() {
+  const b = S.lastBackup, mine = lsGet(LAST_BACKUP_KEY);
+  return `<p class="backup-status">${b?.at ? `Last backup: <strong>${esc(dateTimeLabel(b.at))}</strong> by ${esc(b.by || '')}${b.auto ? ' (automatic)' : ''}` : 'No backup taken yet.'}${
+    mine ? ` · On this device: ${esc(dateLabel(mine))}` : ''}</p>
+    <label class="check"><input type="checkbox" data-change="auto-backup"${autoBackupOn() ? ' checked' : ''}> Save a backup automatically once a day on this device (the first time I open the app)</label>`;
 }
 
 async function importData(file) {
@@ -2816,7 +2847,7 @@ const ACTIONS = {
     await save('users', doc, `${u.name || u.email}: ${doc.role}${doc.flatId ? ', flat ' + doc.flatId : ''}`);
     await refresh('Member updated');
   },
-  backup: () => download(`${fileSlug()}-backup-${todayISO()}.json`, backupJson(), 'application/json'),
+  backup: async () => { await saveBackup(false); toast('Backup saved'); rerender(); },
 };
 
 const FORMS = {
@@ -2886,6 +2917,7 @@ const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
   'spend-view': v => { S.ui.spendView = v; rerender(); },
   'usage-who': v => { S.ui.usageWho = v; rerender(); },
+  'auto-backup': (_, input) => { lsSet(AUTO_BACKUP_KEY, input.checked ? 'on' : 'off'); toast(input.checked ? 'Daily backup is on for this device' : 'Daily backup is off for this device'); },
   'demo-account': v => { S.ui.reportMonth = null; S.ui.spendView = null; store.switchAccount(v); },
   async import(_, input) {
     const file = input.files[0];
@@ -2976,6 +3008,7 @@ async function start() {
   logVisit();
   route();
   startPresence();
+  dailyBackup();
 }
 
 async function onAuthChange(fbUser) {
