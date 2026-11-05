@@ -638,6 +638,7 @@ function viewDashboard() {
     ${!isAdmin() && S.user.flatId ? levyBanner() : ''}
     ${taxBanners()}
     ${!isAdmin() ? myProfileNudge() : ''}
+    ${!isAdmin() ? myElecNudge() : ''}
     ${isAdmin() ? profileSummaryCard() : ''}
     ${quickLinks()}
     <section class="kpis">
@@ -1565,6 +1566,20 @@ function openElecHistory(no, year) {
   form.submit();
   form.remove();
 }
+// Flats that have not added their Service Number yet: a nudge on their Home, reminders for the treasurer.
+const elecMissing = () => S.db.flats.filter(f => !S.db.flatProfiles[f.id]?.elecServiceNo);
+function elecReminder(f) {
+  const who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, please add your electricity Service Number (the Consumer No on your power bill) in the SVLN app under My flat → Electricity bill. Then you can see your full bill history and pay from the app: ${siteLink()}#/dues`;
+}
+function myElecNudge() {
+  const f = flatById(S.user.flatId);
+  if (!f || S.db.flatProfiles[f.id]?.elecServiceNo) return '';
+  return `<div class="banner info elec-nudge">${icon('wallet')}<div>
+    <strong>Add your electricity Service Number</strong>
+    <span>It is the Consumer No on your power bill. Then you can see all your bills and payments, and pay, from the app.</span>
+    <div class="row-btns"><button type="button" class="btn sm primary" data-action="edit-elec" data-id="${esc(f.id)}">Add Service Number</button></div></div></div>`;
+}
 function elecCard(f) {
   const no = S.db.flatProfiles[f.id]?.elecServiceNo;
   return `<div class="card elec-card">
@@ -1608,12 +1623,14 @@ function duesElec() {
         <td class="num" data-label="Units">${e.units ? esc(e.units) : '—'}</td><td class="num" data-label="Amount">${money(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
       : empty('No electricity bills recorded yet. Use Monthly bills → Electricity Bill on Home.')}
   </div>
-  <div class="card"><div class="card-head"><h2>Each flat's electricity</h2><span class="muted">Each flat pays its own bill</span></div>
+  <div class="card"><div class="card-head"><div><h2>Each flat's electricity</h2><p class="muted elec-count">${S.db.flats.length - elecMissing().length} of ${S.db.flats.length} flats have added their Service Number</p></div>
+      ${elecMissing().length ? `<button class="btn sm ghost" data-action="copy-elec-reminders">${icon('copy')}<span>Copy reminders (${elecMissing().length})</span></button>` : ''}</div>
     <div class="table-scroll"><table class="data stack elec-table"><thead><tr><th>Flat</th><th>Owner</th><th>Service Number</th><th></th></tr></thead>
     <tbody>${S.db.flats.map(f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo; return `<tr data-elec-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td><td data-label="Owner">${esc(f.owner || '—')}</td>
       <td data-label="Service Number">${no ? `<span class="elec-no">${esc(no)}</span>` : '<span class="muted">Not added</span>'}</td>
-      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no)
+        : (wa => wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(elecReminder(f))}">${icon('chat')}<span>WhatsApp</span></a>` : '')(waNumber(S.db.flatProfiles[f.id]?.phone))}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
 }
 function elecSettings() {
   return `<form class="card stack" data-form="elec">
@@ -2887,6 +2904,7 @@ const ACTIONS = {
   'edit-tax': ds => houseTaxModal(ds.id),
   'edit-elec': ds => elecModal(ds.id),
   'elec-history': ds => openElecHistory(ds.no, ds.year),
+  'copy-elec-reminders': () => copyText(elecMissing().map(elecReminder).join('\n\n'), 'Reminders copied — paste them in WhatsApp'),
   'flat-alert': ds => flatAlertModal(ds.id),
   'alert-suggest': (ds, el) => { const t = el.closest('form').elements.text; t.value = ds.text; t.focus(); el.remove(); },
   async 'remove-alert'(ds) {
