@@ -100,10 +100,11 @@ for (const width of WIDTHS) {
       expect(await layoutProblems(page), 'flat electricity card').toEqual([]);
       await app.viewAs('demo-admin');
       await app.go('settings');
-      await app.main.locator('textarea[name="commonElec"]').fill('Common lights: 123456P012345678');
+      await app.main.locator('textarea[name="commonElec"]').fill('Common lights: DEMO000COMMON');
       await app.main.locator('form[data-form="elec"]').getByRole('button', { name: 'Save' }).click();
       await app.expectToast('Electricity settings saved');
       await app.duesTab('Electricity');
+      await expect(app.main.locator('.elec-common-bill .elec-chart')).toBeVisible();
       expect(await layoutProblems(page), 'electricity tab').toEqual([]);
       await app.go('expenses');
       await app.expenseRow('Electricity bill – common areas').click();

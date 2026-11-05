@@ -8,7 +8,7 @@ function niceMax(v) {
 }
 
 // series: [{ name, cls, values[] }] drawn as grouped bars per label.
-export function barChart(labels, series, { title = 'Bar chart' } = {}) {
+export function barChart(labels, series, { title = 'Bar chart', fmt = moneyShort, tip = fmt === moneyShort ? money : fmt } = {}) {
   const W = 420, H = 210, padL = 38, padR = 4, padT = 10, padB = 24;
   const iw = W - padL - padR, ih = H - padT - padB;
   const max = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
@@ -18,13 +18,13 @@ export function barChart(labels, series, { title = 'Bar chart' } = {}) {
   for (let i = 0; i <= 4; i++) {
     const v = (max * i) / 4, y = padT + ih - (v / max) * ih;
     out += `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`;
-    out += `<text class="axis" x="${padL - 5}" y="${y + 3.5}" text-anchor="end">${moneyShort(v)}</text>`;
+    out += `<text class="axis" x="${padL - 5}" y="${y + 3.5}" text-anchor="end">${fmt(v)}</text>`;
   }
   labels.forEach((label, i) => {
     series.forEach((s, si) => {
       const v = s.values[i] || 0, h = (v / max) * ih;
       const x = padL + i * band + gap / 2 + si * bw;
-      out += `<rect class="bar ${s.cls}" x="${x.toFixed(1)}" y="${(padT + ih - h).toFixed(1)}" width="${Math.max(bw - 1, 1).toFixed(1)}" height="${h.toFixed(1)}" rx="2"><title>${esc(label)} · ${esc(s.name)}: ${money(v)}</title></rect>`;
+      out += `<rect class="bar ${s.cls}" x="${x.toFixed(1)}" y="${(padT + ih - h).toFixed(1)}" width="${Math.max(bw - 1, 1).toFixed(1)}" height="${h.toFixed(1)}" rx="2"><title>${esc(label)} · ${esc(s.name)}: ${tip(v)}</title></rect>`;
     });
     out += `<text class="axis" x="${(padL + i * band + band / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle">${esc(label)}</text>`;
   });

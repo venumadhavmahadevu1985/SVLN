@@ -32,6 +32,9 @@ beforeEach(async () => {
     await put(`users/${RES}`, { email: 'r@x', name: 'Resident 302', role: 'resident', flatId: '302' });
     await put(`users/${OTHER}`, { email: 'o@x', name: 'Resident 101', role: 'resident', flatId: '101' });
     await put(`users/${PENDING}`, { email: 'p@x', name: 'New person', role: 'pending', createdAt: 'now' });
+    await put('users/it-uid', { email: 'it@x', name: 'IT person', role: 'it' });
+    await put('elecBills/302', { scno: 'S302', flatId: '302', bills: [], payments: [] });
+    await put('elecBills/common-C1', { scno: 'C1', common: true, bills: [], payments: [] });
     await put('flats/302', { owner: 'Owner 302', sqft: 1050 });
     await put('flats/101', { owner: 'Owner 101', sqft: 1150 });
     await put('flatProfiles/302', { phone: '9000000302', members: 4 });
@@ -346,6 +349,37 @@ describe('costs paid by an owner', () => {
     await assertFails(setDoc(doc(as(RES), 'claimBills/c2'), { flatId: '101', name: 'b.jpg', type: 'image/jpeg', data: 'data:x' }));
     await assertFails(getDoc(doc(as(OTHER), 'claimBills/c1')));
     await assertSucceeds(getDoc(doc(as(ADMIN), 'claimBills/c1')));
+  });
+});
+
+describe('IT role', () => {
+  test('IT has the same powers as an admin', async () => {
+    await assertSucceeds(getDoc(doc(as('it-uid'), 'users/' + RES)));
+    await assertSucceeds(setDoc(doc(as('it-uid'), 'expenses/e-it'), { date: '2026-11-05', amount: 10, description: 'x' }));
+    await assertSucceeds(getDoc(doc(as('it-uid'), 'flatProfiles/302')));
+    await assertSucceeds(getDoc(doc(as('it-uid'), 'auditLog/a1')));
+    await assertSucceeds(updateDoc(doc(as('it-uid'), 'users/' + PENDING), { role: 'resident', flatId: '101' }));
+  });
+  test('nobody can make themselves IT', async () => {
+    await assertFails(updateDoc(doc(as(RES), 'users/' + RES), { role: 'it' }));
+    await assertFails(updateDoc(doc(as(PENDING), 'users/' + PENDING), { role: 'it' }));
+    await assertFails(setDoc(doc(as('new-uid'), 'users/new-uid'), { email: 'n@x', name: 'N', role: 'it', createdAt: 'now' }));
+  });
+});
+
+describe('electricity bills saved by the nightly job', () => {
+  test('a flat reads only its own bill; every member reads the common meter; admins and IT read all', async () => {
+    await assertSucceeds(getDoc(doc(as(RES), 'elecBills/302')));
+    await assertFails(getDoc(doc(as(OTHER), 'elecBills/302')));
+    await assertSucceeds(getDoc(doc(as(OTHER), 'elecBills/common-C1')));
+    await assertFails(getDoc(doc(as(PENDING), 'elecBills/common-C1')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'elecBills/302')));
+    await assertSucceeds(getDoc(doc(as('it-uid'), 'elecBills/302')));
+  });
+  test('nobody writes them from the app (only the job, with its key)', async () => {
+    await assertFails(setDoc(doc(as(ADMIN), 'elecBills/302'), { scno: 'x' }));
+    await assertFails(setDoc(doc(as(RES), 'elecBills/302'), { scno: 'x' }));
+    await assertFails(deleteDoc(doc(as(ADMIN), 'elecBills/common-C1')));
   });
 });
 

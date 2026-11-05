@@ -1,0 +1,35 @@
+# Every night: fetch each flat's and the common meter's electricity bills and payments from Eastern Power
+# and save them in the database (elecBills), for the app's current bill, paid / not paid, reminders and graph.
+# Needs the repository secrets FIREBASE_SA_PROD and FIREBASE_SA_STAGE (service-account keys, see README).
+# A project whose secret is not set is skipped.
+name: Electricity bills (nightly)
+
+on:
+  schedule:
+    - cron: '30 0 * * *'     # 6:00 am India time
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    name: Fetch bills (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: prod
+            branch: prod
+          - env: stage
+            branch: stage
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ matrix.branch }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-save --no-package-lock firebase-admin@13
+      - run: node scripts/fetch-elec-bills.mjs
+        env:
+          FIREBASE_SA: ${{ matrix.env == 'prod' && secrets.FIREBASE_SA_PROD || secrets.FIREBASE_SA_STAGE }}

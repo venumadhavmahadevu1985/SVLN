@@ -626,3 +626,14 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .elec-fields { gap: 12px; }
 .elec-fields[hidden] { display: none; }
 .elec-history { display: grid; gap: 6px; margin: 4px 0 10px; }
+
+/* Electricity bills from Eastern Power */
+.elec-current { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border-radius: 12px; background: var(--surface-2); margin: 6px 0 8px; }
+.elec-current > div { display: grid; gap: 2px; }
+.elec-amt { font-size: 22px; }
+.elec-chart { margin-top: 8px; }
+.elec-pays ul { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; }
+.elec-pays li { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.elec-pays li small { color: var(--muted); overflow-wrap: anywhere; }
+.elec-common-bill { padding: 4px 0 10px; border-bottom: 1px solid var(--border); }
+.elec-bill-cell .badge { white-space: nowrap; }
