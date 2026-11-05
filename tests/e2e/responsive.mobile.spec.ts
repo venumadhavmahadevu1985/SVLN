@@ -53,7 +53,7 @@ for (const width of WIDTHS) {
         await app.go(r);
         expect(await layoutProblems(app.page), `#/${r}`).toEqual([]);
       }
-      for (const tab of ['Pending dues', 'Flats & amount', 'House tax'] as const) {
+      for (const tab of ['Pending dues', 'Flats & amount', 'House tax', 'Split expenses', 'Electricity'] as const) {
         await app.duesTab(tab);
         expect(await layoutProblems(app.page), `dues ${tab}`).toEqual([]);
       }
@@ -88,6 +88,27 @@ for (const width of WIDTHS) {
       await check('pay salary', () => app.main.getByRole('button', { name: 'Pay salary' }).click());
       await app.go('notices');
       await check('post notice', () => app.main.getByRole('button', { name: 'Post notice' }).click());
+    });
+
+    test('electricity fits the screen: the flat card with bill history, the treasurer tab', async ({ app, page }) => {
+      await app.open('dues', RESIDENT);
+      await app.main.locator('.elec-card').getByRole('button', { name: 'Add Service Number' }).click();
+      expect(await layoutProblems(page), 'service number dialog').toEqual([]);
+      await app.field('Service Number').fill('123456P012345678');
+      await app.submitModal();
+      await app.expectToast('Service Number saved');
+      expect(await layoutProblems(page), 'flat electricity card').toEqual([]);
+      await app.viewAs('demo-admin');
+      await app.go('settings');
+      await app.main.locator('textarea[name="commonElec"]').fill('Common lights: 123456P012345678');
+      await app.main.locator('form[data-form="elec"]').getByRole('button', { name: 'Save' }).click();
+      await app.expectToast('Electricity settings saved');
+      await app.duesTab('Electricity');
+      expect(await layoutProblems(page), 'electricity tab').toEqual([]);
+      await app.go('expenses');
+      await app.expenseRow('Electricity bill – common areas').click();
+      await app.modal.getByRole('button', { name: 'Edit' }).click();
+      expect(await layoutProblems(page), 'electricity expense with meter reading').toEqual([]);
     });
 
     test('split expenses fit the screen: form, list, payment and the resident view', async ({ app, page }) => {

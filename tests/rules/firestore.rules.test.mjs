@@ -349,6 +349,16 @@ describe('costs paid by an owner', () => {
   });
 });
 
+describe('electricity Service Number', () => {
+  test('a flat saves its own Service Number (text, at most 30); not another flat\'s', async () => {
+    await assertSucceeds(updateDoc(doc(as(RES), 'flatProfiles/302'), { elecServiceNo: '123456P012345678' }));
+    await assertFails(updateDoc(doc(as(RES), 'flatProfiles/302'), { elecServiceNo: 'x'.repeat(31) }));
+    await assertFails(updateDoc(doc(as(RES), 'flatProfiles/302'), { elecServiceNo: 123456 }));
+    await assertFails(updateDoc(doc(as(OTHER), 'flatProfiles/302'), { elecServiceNo: '123456P012345678' }));
+    await assertFails(getDoc(doc(as(OTHER), 'flatProfiles/302')));
+  });
+});
+
 describe('house tax penalty', () => {
   test('a resident can save a penalty amount; bad values are refused', async () => {
     const db = as(RES);

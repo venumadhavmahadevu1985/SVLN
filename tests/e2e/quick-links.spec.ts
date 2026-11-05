@@ -88,6 +88,33 @@ test.describe('Monthly bills quick links', () => {
     await expect(quick(app)).toHaveCount(0);
   });
 
+  test('the form opens with the same bill the box shows, even when it was described differently', async ({ app }) => {
+    await app.open();
+    // An older bill described "Electricity bill"; this month's described "Power bill" under the same category.
+    await app.addExpense({ date: '2026-10-03', amount: 1565, category: 'Electricity bill', description: 'Electricity bill' });
+    await app.expectToast('Expense added');
+    await app.addExpense({ date: '2026-11-02', amount: 1427, category: 'Electricity bill', description: 'Power bill', mode: 'cash' });
+    await app.expectToast('Expense added');
+    await app.go('dashboard');
+    await expect(btn(app, 'Electricity Bill')).toContainText('Paid ₹1,427 · 2 Nov 2026');
+    await btn(app, 'Electricity Bill').click();
+    await expect(app.field('Amount (₹)')).toHaveValue('1427');
+    await expect(app.field('Description')).toHaveValue('Power bill');
+    await expect(app.modal.locator('.quick-dup')).toContainText('Already added this month: ₹1,427 on 2 Nov 2026');
+    await expect(app.modal.locator('.quick-dup')).toContainText('Power bill. Save only if this is another bill.');
+  });
+
+  test('no warning when this month\'s bill is not added yet', async ({ app }) => {
+    await app.open();
+    await app.addExpense({ date: '2026-10-31', amount: 1565, category: 'Electricity bill', description: 'Electricity bill October' });
+    await app.expectToast('Expense added');
+    await app.go('dashboard');
+    await btn(app, 'Electricity Bill').click();
+    await expect(app.field('Amount (₹)')).toHaveValue('1565');
+    await expect(app.field('Description')).toHaveValue('Electricity bill November');
+    await expect(app.modal.locator('.quick-dup')).toHaveCount(0);
+  });
+
   test('residents do not see the quick links', async ({ app }) => {
     await app.open('dashboard', RESIDENT);
     await expect(quick(app)).toHaveCount(0);

@@ -222,6 +222,7 @@ async function loadData() {
   const coll = meta.find(m => m.id === 'collections');
   S.collections = coll?.byMonth || {};
   S.special = coll?.special || {};
+  S.lastBackup = meta.find(m => m.id === 'backup') || null;
   if (isAdmin()) {
     // Totals saved before receipts were counted by dues month are rebuilt once.
     if (coll && coll.basis !== COLLECTION_BASIS) S.collections = await refreshCollectionTotals();
@@ -678,8 +679,7 @@ const lc = v => String(v || '').toLowerCase();
 // The latest expense for a quick link: description starting with the name wins, then the category.
 function lastQuickExpense(label, inMonth) {
   const l = lc(label), pool = S.db.expenses.filter(e => !inMonth || e.date.startsWith(inMonth));
-  const latest = arr => arr.sort((a, b) => byExpenseOrder(b, a))[0];
-  return latest(pool.filter(e => lc(e.description).startsWith(l))) || latest(pool.filter(e => lc(e.category).startsWith(l)));
+  return pool.filter(e => lc(e.description).startsWith(l) || lc(e.category).startsWith(l)).sort((a, b) => byExpenseOrder(b, a))[0];
 }
 const quickStaff = label => staffList().find(st => lc(st.role).startsWith(lc(label)) || lc(st.name).startsWith(lc(label)));
 
@@ -708,7 +708,10 @@ function openQuickExpense(label) {
     ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: last.amount,
         description: last.description.replace(new RegExp(`\\b(${MONTH_NAMES.join('|')})\\b`, 'g'), thisMonth) }
     : { description: label, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
-  openModal(`Add expense · ${label}`, expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
+  // Already added this month: say so, so the same bill is not entered twice by mistake.
+  const done = lastQuickExpense(label, curMonth());
+  openModal(`Add expense · ${label}`, (done ? `<div class="banner warn quick-dup">${icon('receipt')}<div><strong>Already added this month: ${money(done.amount)} on ${dateLabel(done.date)}</strong>
+    <span>${esc(done.description)}. Save only if this is another bill.</span></div></div>` : '') + expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
 }
 
 // ---------- expenses ----------
@@ -792,6 +795,11 @@ function expenseForm(e = {}) {
     ${datalist('vendorList', vendors)}
     <label class="field"><span>Payment mode</span><input name="mode" list="modeList" maxlength="30" value="${esc(e.mode || modeList()[0] || '')}"></label>
     ${datalist('modeList', modeList())}
+    <div class="elec-fields span2 form-grid" data-elec-fields${isElecExpense(e) ? '' : ' hidden'}>
+      <label class="field"><span>Meter reading</span><input type="number" name="meterReading" min="0" step="1" inputmode="numeric" value="${esc(e.meterReading ?? '')}"></label>
+      <label class="field"><span>Units used</span><input type="number" name="units" min="0" step="1" inputmode="numeric" value="${esc(e.units ?? '')}"></label>
+      ${(pr => pr ? `<p class="hint span2" data-prev-reading="${esc(pr.meterReading)}">Previous reading: ${esc(Number(pr.meterReading).toLocaleString('en-IN'))} on ${dateLabel(pr.date)}. Units are worked out from it if left empty.</p>` : '')(prevReading(e.id ? e : null))}
+    </div>
     <label class="field span2"><span>Paid by</span><input name="paidBy" maxlength="60" value="${esc(e.paidBy || S.settings.treasurer || '')}"></label>
     <div class="field span2"><label for="receiptIn"><span>Receipt or bill (photo or PDF)</span></label>
       <input id="receiptIn" type="file" name="receipt" accept="image/*,application/pdf">
@@ -812,6 +820,16 @@ async function submitExpense(fd, existing) {
     paidBy: fd.get('paidBy').trim(),
   };
   if (!(doc.amount > 0)) throw new Error('Enter an amount greater than zero.');
+  // Meter reading and units only for electricity bills; units come from the previous reading when left empty.
+  delete doc.meterReading; delete doc.units;
+  if (isElecExpense(doc)) {
+    const reading = Math.round(Number(fd.get('meterReading'))) || 0, prev = prevReading(existing);
+    let units = Math.round(Number(fd.get('units'))) || 0;
+    if (reading && prev && reading < Number(prev.meterReading)) throw new Error(`The meter reading is lower than the previous one (${Number(prev.meterReading).toLocaleString('en-IN')}).`);
+    if (reading && !units && prev) units = reading - Number(prev.meterReading);
+    if (reading) doc.meterReading = reading;
+    if (units) doc.units = units;
+  }
   if (fd.get('removeReceipt')) delete doc.receipt;
   const file = fd.get('receipt');
   if (file && file.size) doc.receipt = await store.upload(file);
@@ -830,6 +848,7 @@ function showExpense(id) {
     <dl class="details">
       ${item('Date', dateLabel(e.date))}${item('Category', esc(e.category))}${item('Paid to', esc(e.vendor))}
       ${item('Payment mode', esc(e.mode))}${item('Paid by', esc(e.paidBy))}
+      ${item('Meter reading', e.meterReading ? esc(Number(e.meterReading).toLocaleString('en-IN')) : '')}${item('Units used', e.units ? esc(e.units) : '')}
       ${item('Recorded', esc([e.createdBy, e.createdAt && dateTimeLabel(e.createdAt)].filter(Boolean).join(' · ')))}
     </dl>
     ${r ? `<div class="receipt">${isImg ? `<img src="${esc(r.url)}" alt="Receipt for ${esc(e.description)}">` : ''}
@@ -870,11 +889,11 @@ const billingSummary = () => {
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
-  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax']];
+  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax'], ['elec', 'Electricity']];
   return `
     <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
-    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : duesFlats()}`;
+    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : tab === 'elec' ? duesElec() : duesFlats()}`;
 }
 
 function duesGrid() {
@@ -1002,6 +1021,7 @@ function duesResident() {
     <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${ordinal(S.settings.dueDay)}</p></div></div>
     ${flatAlertBanner(f.id)}
     ${taxOwed(f.id) ? houseTaxCard(f) + flatDetailsCard(f) : flatDetailsCard(f) + houseTaxCard(f)}
+    ${elecCard(f)}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
@@ -1512,6 +1532,98 @@ function flatDetailsCard(f) {
       <p class="hint">Updated ${p.updatedAt ? dateTimeLabel(p.updatedAt) : ''}${p.updatedBy ? ' by ' + esc(p.updatedBy) : ''}. Phone numbers are visible only to this flat and the treasurer.</p>`
       : '<p class="muted">No details yet. Add the owner name and a phone number so the treasurer can reach this flat.</p>'}
   </div>`;
+}
+
+// ----- electricity: each flat's Service Number (APEPDCL) and the common-area meter -----
+// flatProfiles.elecServiceNo; settings.commonElec ["Label: number" per line] and settings.elecBillUrl.
+// Electricity expenses can carry the meter reading and units.
+const DEFAULT_ELEC_URL = 'https://www.apeasternpower.com/viewBillDetailsMain';
+const elecUrl = () => S.settings.elecBillUrl ?? DEFAULT_ELEC_URL;
+// A bill for electricity used (not electrical repairs, nor a tip for the electricity staff).
+const ELEC_CAT = /^(electricity|power|current)\b(?!\s*(staff|repair))/i, ELEC_DESC = /^(electricity|power|current) bill|apepdcl|eastern power/i;
+const isElecExpense = e => ELEC_CAT.test(e.category || '') || ELEC_DESC.test(e.description || '');
+// "Common lights: 123456P012345678" → { label, no }; a bare number has no label.
+const commonMeters = () => lines(S.settings.commonElec).map(l => {
+  const i = l.lastIndexOf(':');
+  return i > 0 ? { label: l.slice(0, i).trim(), no: l.slice(i + 1).trim() } : { label: '', no: l };
+}).filter(m => m.no);
+function elecBillLink(no, label = 'View bill', cls = 'btn sm ghost') {
+  return elecUrl() ? `<a class="${cls}" href="${esc(elecUrl())}" target="_blank" rel="noopener" data-pay data-copy="${esc(no || '')}" data-copy-what="Service Number">${icon('wallet')}<span>${label}</span></a>` : '';
+}
+// Eastern Power's yearly history (monthly units, bill dates and payments) as a PDF, opened in a new tab.
+// Their years run April–March and are written "2026-2027".
+const ELEC_HISTORY_URL = 'https://www.apeasternpower.com/dwnConsPayPDF';
+const elecYear = (back = 0) => { const [y, m] = todayISO().split('-').map(Number), start = (m >= 4 ? y : y - 1) - back; return `${start}-${start + 1}`; };
+function elecHistoryButtons(no, cls = 'btn sm ghost') {
+  return `<button type="button" class="${cls}" data-action="elec-history" data-no="${esc(no)}" data-year="${elecYear()}">${icon('receipt')}<span>Bill history ${elecYear()}</span></button>
+    <button type="button" class="btn sm ghost" data-action="elec-history" data-no="${esc(no)}" data-year="${elecYear(1)}"><span>${elecYear(1)}</span></button>`;
+}
+function openElecHistory(no, year) {
+  const form = Object.assign(document.createElement('form'), { method: 'post', action: ELEC_HISTORY_URL, target: '_blank' });
+  for (const [k, v] of [['ltscno', no], ['year', year]]) form.append(Object.assign(document.createElement('input'), { type: 'hidden', name: k, value: v }));
+  document.body.append(form);
+  form.submit();
+  form.remove();
+}
+function elecCard(f) {
+  const no = S.db.flatProfiles[f.id]?.elecServiceNo;
+  return `<div class="card elec-card">
+    <div class="card-head"><h2>Electricity bill</h2>
+      <button class="btn sm ${no ? 'ghost' : 'primary'}" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add Service Number'}</button></div>
+    <dl class="details"><div><dt>Service Number</dt><dd>${no ? `<strong class="elec-no">${esc(no)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div></dl>
+    ${no ? `<div class="elec-history"><span class="pc-title">Units, bills and payments (from Eastern Power)</span><div class="row-btns">${elecHistoryButtons(no)}</div></div>` : ''}
+    ${no && elecUrl() ? `<div class="tax-pay">${elecBillLink(no, 'View / pay bill', 'btn primary')}
+      <small class="muted">Copies your Service Number — paste it on the Eastern Power page to see or pay the bill.</small></div>` : ''}
+    <p class="hint">Each flat pays its own electricity bill. Visible only to this flat and the treasurer.</p>
+  </div>`;
+}
+function elecModal(flatId) {
+  const p = S.db.flatProfiles[flatId] || {};
+  openModal(`Electricity · Flat ${flatId}`, `<p class="muted">The Service Number is on the electricity bill or payment receipt (also called Consumer No).</p>
+    <label class="field"><span>Service Number</span><input name="elecServiceNo" maxlength="30" autocomplete="off" value="${esc(p.elecServiceNo || '')}" placeholder="e.g. 123456P012345678"></label>`, {
+    onSubmit: async fd => {
+      const no = String(fd.get('elecServiceNo') || '').replace(/\s+/g, '').toUpperCase();
+      if (no && !/^[A-Z0-9/-]{5,30}$/.test(no)) throw new Error('Enter the Service Number as printed on the bill (letters and numbers only).');
+      await save('flatProfiles', { ...p, id: flatId, elecServiceNo: no }, `Flat ${flatId} electricity Service Number${no ? '' : ' removed'}`);
+      await refresh('Service Number saved');
+    },
+  });
+}
+// The common-area bill: latest electricity expenses with their meter readings.
+const elecExpenses = () => S.db.expenses.filter(isElecExpense).sort((a, b) => byExpenseOrder(b, a));
+function prevReading(before) {
+  return elecExpenses().find(e => Number(e.meterReading) > 0 && (!before || byExpenseOrder(e, before) < 0 && e.id !== before.id));
+}
+function duesElec() {
+  const meters = commonMeters(), bills = elecExpenses().slice(0, 6);
+  return `<div class="card elec-common">
+    <div class="card-head"><h2>Common area electricity</h2><a class="btn sm ghost" href="#/settings">Change in Settings</a></div>
+    ${meters.length ? `<div class="list">${meters.map(m => `<div class="pending-row"><div class="row-main"><strong>${esc(m.label || 'Common meter')}</strong><small>Service Number <span class="elec-no">${esc(m.no)}</span></small></div>
+      <div class="row-btns">${elecHistoryButtons(m.no)}${elecBillLink(m.no)}</div></div>`).join('')}</div>`
+      : `<p class="muted">Add the common meter's Service Number in Settings → Electricity.</p>`}
+    <h3 class="st-section">Recent bills</h3>
+    ${bills.length ? `<div class="table-scroll"><table class="data stack elec-bills"><thead><tr><th>Date</th><th>Bill</th><th class="num">Meter reading</th><th class="num">Units</th><th class="num">Amount</th></tr></thead>
+      <tbody>${bills.map(e => `<tr><td class="stack-title">${dateLabel(e.date)}</td><td data-label="Bill">${esc(e.description)}</td>
+        <td class="num" data-label="Meter reading">${e.meterReading ? esc(Number(e.meterReading).toLocaleString('en-IN')) : '—'}</td>
+        <td class="num" data-label="Units">${e.units ? esc(e.units) : '—'}</td><td class="num" data-label="Amount">${money(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
+      : empty('No electricity bills recorded yet. Use Monthly bills → Electricity Bill on Home.')}
+  </div>
+  <div class="card"><div class="card-head"><h2>Each flat's electricity</h2><span class="muted">Each flat pays its own bill</span></div>
+    <div class="table-scroll"><table class="data stack elec-table"><thead><tr><th>Flat</th><th>Owner</th><th>Service Number</th><th></th></tr></thead>
+    <tbody>${S.db.flats.map(f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo; return `<tr data-elec-row="${esc(f.id)}">
+      <td class="stack-title"><strong>${esc(f.id)}</strong></td><td data-label="Owner">${esc(f.owner || '—')}</td>
+      <td data-label="Service Number">${no ? `<span class="elec-no">${esc(no)}</span>` : '<span class="muted">Not added</span>'}</td>
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+}
+function elecSettings() {
+  return `<form class="card stack" data-form="elec">
+    <h2>Electricity</h2>
+    <p class="hint">The common-area meter(s) the society pays for. One per line, e.g. <em>Common lights: 123456P012345678</em>. Each flat adds its own Service Number on My flat.</p>
+    <label class="field"><span>Common meter Service Number(s)</span><textarea name="commonElec" rows="2" maxlength="300">${esc(S.settings.commonElec || '')}</textarea></label>
+    <label class="field"><span>Bill page link</span><input type="url" name="elecBillUrl" maxlength="300" value="${esc(elecUrl())}" placeholder="https://…">
+      <small class="muted">Opens when someone taps View bill (the Service Number is copied first). Leave empty to hide the button.</small></label>
+    <div><button class="btn primary">Save</button></div>
+  </form>`;
 }
 
 // ----- individual alerts: a banner the treasurer sets for one flat (flatAlerts/{flatNo}) -----
@@ -2454,6 +2566,7 @@ function viewSettings() {
     </form>
     ${renameCategoryCard()}
     ${houseTaxSettings()}
+    ${elecSettings()}
     ${membersCard()}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
@@ -2462,6 +2575,7 @@ function viewSettings() {
     <div class="card stack">
       <h2>Data</h2>
       <p class="muted">Download a full backup, or import a data file (for example an earlier month from the notebook). Imported records with the same ID replace existing ones.</p>
+      ${backupStatus()}
       <div class="row-btns">
         <button class="btn ghost" data-action="backup">${icon('download')}<span>Download backup (JSON)</span></button>
         <label class="btn ghost">${icon('upload')}<span>Import data file</span><input type="file" accept="application/json,.json" data-change="import" hidden></label>
@@ -2500,6 +2614,33 @@ function backupJson() {
     flats: S.db.flats, flatProfiles: Object.values(S.db.flatProfiles), expenses: S.db.expenses,
     payments: S.db.payments, levies: S.db.levies, claims: S.db.claims, vendors: S.db.vendors, notices: S.db.notices,
   }, null, 2);
+}
+
+// Daily backup: the first time a treasurer opens the app each day, the full backup is saved to that
+// phone or computer (Downloads). Can be turned off per device; meta/backup records the last one for every admin.
+const AUTO_BACKUP_KEY = 'svln-auto-backup', LAST_BACKUP_KEY = 'svln-last-backup';
+const backupName = () => `${fileSlug()}-backup-${todayISO()}.json`;
+// On by default on the real site; the demo leaves it off unless switched on (it has nothing worth keeping).
+const autoBackupOn = () => (lsGet(AUTO_BACKUP_KEY) || (store.demo ? 'off' : 'on')) === 'on';
+async function saveBackup(auto) {
+  download(backupName(), backupJson(), 'application/json');
+  lsSet(LAST_BACKUP_KEY, todayISO());
+  const doc = { id: 'backup', at: new Date().toISOString(), by: S.user.name, auto: !!auto };
+  S.lastBackup = doc;
+  try { await store.put('meta', doc); } catch { /* the file is saved even if this note is not */ }
+}
+async function dailyBackup() {
+  if (!isAdmin() || !autoBackupOn() || lsGet(LAST_BACKUP_KEY) === todayISO()) return;
+  try {
+    await saveBackup(true);
+    toast(`Today's backup saved: ${backupName()}`);
+  } catch (err) { console.error(err); }
+}
+function backupStatus() {
+  const b = S.lastBackup, mine = lsGet(LAST_BACKUP_KEY);
+  return `<p class="backup-status">${b?.at ? `Last backup: <strong>${esc(dateTimeLabel(b.at))}</strong> by ${esc(b.by || '')}${b.auto ? ' (automatic)' : ''}` : 'No backup taken yet.'}${
+    mine ? ` · On this device: ${esc(dateLabel(mine))}` : ''}</p>
+    <label class="check"><input type="checkbox" data-change="auto-backup"${autoBackupOn() ? ' checked' : ''}> Save a backup automatically once a day on this device (the first time I open the app)</label>`;
 }
 
 async function importData(file) {
@@ -2744,6 +2885,8 @@ const ACTIONS = {
     .map(r => reminderText(r.f, r.o)).join('\n\n')),
   'edit-profile': ds => profileModal(ds.id),
   'edit-tax': ds => houseTaxModal(ds.id),
+  'edit-elec': ds => elecModal(ds.id),
+  'elec-history': ds => openElecHistory(ds.no, ds.year),
   'flat-alert': ds => flatAlertModal(ds.id),
   'alert-suggest': (ds, el) => { const t = el.closest('form').elements.text; t.value = ds.text; t.focus(); el.remove(); },
   async 'remove-alert'(ds) {
@@ -2816,7 +2959,7 @@ const ACTIONS = {
     await save('users', doc, `${u.name || u.email}: ${doc.role}${doc.flatId ? ', flat ' + doc.flatId : ''}`);
     await refresh('Member updated');
   },
-  backup: () => download(`${fileSlug()}-backup-${todayISO()}.json`, backupJson(), 'application/json'),
+  backup: async () => { await saveBackup(false); toast('Backup saved'); rerender(); },
 };
 
 const FORMS = {
@@ -2840,6 +2983,12 @@ const FORMS = {
   },
   async renameCategory(fd) {
     await renameCategory(String(fd.get('from') || ''), String(fd.get('to') || '').trim());
+  },
+  async elec(fd) {
+    const elecBillUrl = String(fd.get('elecBillUrl') || '').trim();
+    if (elecBillUrl && !/^https:\/\/\S+$/.test(elecBillUrl)) throw new Error('The bill page link must start with https://');
+    await saveSettings({ commonElec: String(fd.get('commonElec') || '').trim(), elecBillUrl }, 'Electricity settings updated');
+    await refresh('Electricity settings saved');
   },
   async houseTax(fd) {
     const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));
@@ -2886,6 +3035,7 @@ const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
   'spend-view': v => { S.ui.spendView = v; rerender(); },
   'usage-who': v => { S.ui.usageWho = v; rerender(); },
+  'auto-backup': (_, input) => { lsSet(AUTO_BACKUP_KEY, input.checked ? 'on' : 'off'); toast(input.checked ? 'Daily backup is on for this device' : 'Daily backup is off for this device'); },
   'demo-account': v => { S.ui.reportMonth = null; S.ui.spendView = null; store.switchAccount(v); },
   async import(_, input) {
     const file = input.files[0];
@@ -2914,7 +3064,7 @@ function bindEvents() {
     if (no && navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(no);
-        toast(`Assessment number ${no} copied — paste it on the payment page`);
+        toast(`${a.dataset.copyWhat || 'Assessment number'} ${no} copied — paste it on the ${a.dataset.copyWhat ? 'bill' : 'payment'} page`);
       } catch { /* clipboard blocked: the number is shown on the page */ }
     }
     if (inApp) location.assign(a.href);
@@ -2933,6 +3083,9 @@ function bindEvents() {
     } catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('input', e => {
+    const elecBox = e.target.form?.querySelector('[data-elec-fields]');
+    if (elecBox && ['category', 'description'].includes(e.target.name))
+      elecBox.hidden = !isElecExpense({ category: e.target.form.elements.category.value, description: e.target.form.elements.description.value });
     const box = e.target.closest?.('[data-levy-form]');
     if (box) return updateLevyForm(box, ['total', 'split'].includes(e.target.name));
     const key = e.target.dataset?.filter;
@@ -2976,6 +3129,7 @@ async function start() {
   logVisit();
   route();
   startPresence();
+  dailyBackup();
 }
 
 async function onAuthChange(fbUser) {

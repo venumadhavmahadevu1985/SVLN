@@ -617,3 +617,12 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .modal-card > header .icon-btn { flex: none; }
 .levy-info td.num { white-space: normal; overflow-wrap: anywhere; }
 .levy-info td:first-child { white-space: nowrap; vertical-align: top; }
+
+/* Daily backup */
+.backup-status { margin: 0; }
+
+/* Electricity */
+.elec-no { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.elec-fields { gap: 12px; }
+.elec-fields[hidden] { display: none; }
+.elec-history { display: grid; gap: 6px; margin: 4px 0 10px; }
