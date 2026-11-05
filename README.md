@@ -8,7 +8,11 @@ Every flat signs in with its own account. The treasurer (admin) manages everythi
 
 **No society data is stored in the code.** The name, address, flats, amounts, categories, payment modes, expenses,
 payments, vendors and notices all live in **Firebase Firestore**. They're entered through the site or imported from a
-data file such as [`data/2026-10-notebook.json`](data/2026-10-notebook.json), which holds the October 2026 notebook page.
+data file (Settings → Data → Import data file). Real data files are kept off this public repository.
+
+**Privacy:** this repository and the demo are public, so they contain only made-up data. Everything real (flats,
+phones, money, bills, Service Numbers) lives in Firebase and is visible only to signed-in, approved members, as
+`firestore.rules` allows. Before signing in, only the society name is shown.
 
 ## Who can do what
 
@@ -111,14 +115,14 @@ Residents can read payments only for their own flat. Monthly totals come from `m
    You can also paste `firestore.rules` into *Firestore → Rules* in the console.
 4. Open the site and sign in. **The first person to sign in on an empty database becomes the admin** and sees
    *Set up your society*. Do this straight after deploying.
-5. In **Settings → Data → Import data file**, choose `data/2026-10-notebook.json` to load October 2026.
+5. In **Settings → Data → Import data file**, choose your data file (kept outside this repository) to load past months.
 6. Share the link. Each resident signs in, enters their flat number, and you tap **Approve** in **Settings → Members**.
 
 ## Data model (Firestore)
 
 | Collection | Fields |
 |---|---|
-| `public/info` | name, address (shown on the sign-in page) |
+| `public/info` | name only (shown on the sign-in page; the rules allow nothing else) |
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[], quickExpenses[], houseTaxDue[] {label, month, day}, houseTaxRemindDays, houseTaxPayUrl, commonElec (lines "Label: Service Number"), elecBillUrl |
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues }, special { 'YYYY-MM': { levyId: split-expense money received that month } } |
 | `levies/{id}` | title, category, total, date, split (equal / area / custom), shares { flatNo: ₹ }, instalments (1–12), dueDate (first instalment), note, expenseId — split expenses; members read, admins write |

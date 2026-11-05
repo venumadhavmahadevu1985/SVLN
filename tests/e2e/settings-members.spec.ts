@@ -119,7 +119,7 @@ test.describe('Backup and import', () => {
   });
 
   test('importing the same file twice does not duplicate records', async ({ app }) => {
-    await app.main.locator('input[data-change="import"]').setInputFiles('data/2026-10-notebook.json');
+    await app.main.locator('input[data-change="import"]').setInputFiles('tests/data/sample-import.json');
     await app.expectToast('Import finished');
     await app.go('expenses');
     await expect(app.main.locator('.list-summary')).toHaveText(/9 expenses\s*₹8,010/);

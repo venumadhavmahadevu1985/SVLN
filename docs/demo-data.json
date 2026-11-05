@@ -1,5 +1,5 @@
 {
-  "note": "Sample data for the public demo (/demo/). Generated from data/2026-10-notebook.json. Loaded in the browser only; never written to a database.",
+  "note": "Made-up sample data for the public demo (/demo/). Loaded in the browser only; never written to a database.",
   "accounts": [
     {
       "id": "demo-admin",

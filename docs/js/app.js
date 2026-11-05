@@ -17,7 +17,7 @@ const DEFAULT_QUICK = ['Watchman', 'Electricity Bill', 'GVMC', 'Municipal Water'
 // ---------- state & small helpers ----------
 const S = {
   user: null,
-  info: null,          // public/info: society name + address (readable before sign-in)
+  info: null,          // public/info: society name only (readable before sign-in)
   hasSettings: false,
   db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], claims: [], elecBills: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...FALLBACK },
@@ -282,12 +282,12 @@ async function refresh(msg) {
   if (msg) toast(msg);
 }
 
-// Settings are private to members; name + address are also copied to public/info for the sign-in page.
+// Settings are private to members; only the society name is copied to public/info for the sign-in page.
 async function saveSettings(patch, summary) {
   const { id, createdAt, createdBy, updatedAt, updatedBy, ...clean } = { ...S.settings, ...patch };
   await save('meta', { ...clean, id: 'settings' }, summary);
-  await store.put('public', { id: 'info', name: clean.name || '', address: clean.address || '', updatedAt: new Date().toISOString() });
-  S.info = { name: clean.name || '', address: clean.address || '' };
+  await store.put('public', { id: 'info', name: clean.name || '', updatedAt: new Date().toISOString() });
+  S.info = { name: clean.name || '' };
 }
 
 // ---------- modal ----------
@@ -2881,7 +2881,6 @@ function renderLogin() {
     <section class="auth card">
       <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>${esc(S.info?.name || 'Maintenance accounts')}</h1>
-      ${S.info?.address ? `<p class="muted">${esc(S.info.address)}</p>` : ''}
       <p>${S.info ? 'Sign in to see the maintenance accounts.' : 'Sign in to set up your society\'s accounts.'}</p>
       ${installBanner()}
       <button class="btn primary block" data-action="login-google">Continue with Google</button>
@@ -3300,6 +3299,8 @@ async function start() {
   route();
   startPresence();
   dailyBackup();
+  if (isAdmin() && S.info && Object.keys(S.info).some(k => !['id', 'name', 'updatedAt'].includes(k)))
+    store.put('public', { id: 'info', name: S.info.name || '', updatedAt: new Date().toISOString() }).then(() => { S.info = { name: S.info.name || '' }; }).catch(console.error);
 }
 
 async function onAuthChange(fbUser) {

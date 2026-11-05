@@ -173,6 +173,9 @@ describe('admins', () => {
     await assertSucceeds(getDocs(collection(db, 'payments')));
     await assertSucceeds(updateDoc(doc(db, 'meta/settings'), { fixedAmount: 1200 }));
     await assertSucceeds(setDoc(doc(db, 'public/info'), { name: 'SVLN Paradise' }));
+    // Only the name is public: no address or anything else, even from an admin.
+    await assertFails(setDoc(doc(db, 'public/info'), { name: 'SVLN Paradise', address: 'x' }));
+    await assertFails(setDoc(doc(db, 'public/info'), { name: 'SVLN Paradise', phone: '9' }));
     await assertSucceeds(updateDoc(doc(db, 'flats/302'), { sqft: 1100 }));
     await assertSucceeds(getDoc(doc(db, 'flatProfiles/101')));
     await assertSucceeds(getDoc(doc(db, 'auditLog/a1')));

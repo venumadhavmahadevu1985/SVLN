@@ -1,0 +1,296 @@
+{
+  "app": "svln-paradise",
+  "version": 1,
+  "note": "Made-up sample data file for the tests (same shape as a real import). Import a real file in Settings → Data → Import data file.",
+  "settings": {
+    "name": "SVLN Paradise",
+    "address": "1-1, Sample Colony, Visakhapatnam",
+    "billing": "fixed",
+    "fixedAmount": 1000,
+    "ratePerSqft": 0,
+    "dueDay": 10,
+    "fyStartMonth": 4,
+    "openingBalance": 3969,
+    "startMonth": "2026-10",
+    "categories": [
+      "Watchman / Security",
+      "Electricity (common areas)",
+      "Water (municipal / tanker)",
+      "GVMC charges",
+      "Housekeeping / Cleaning",
+      "Lift maintenance",
+      "Plumbing & motor",
+      "Electrical repairs",
+      "Festival / Mamullu",
+      "Miscellaneous"
+    ],
+    "paymentModes": [
+      "Cash",
+      "UPI",
+      "Bank transfer",
+      "Cheque"
+    ]
+  },
+  "flats": [
+    {
+      "id": "101",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "102",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "201",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "202",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "301",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "302",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "401",
+      "owner": "",
+      "sqft": 0
+    },
+    {
+      "id": "402",
+      "owner": "",
+      "sqft": 0
+    }
+  ],
+  "expenses": [
+    {
+      "id": "2026-10-e1",
+      "seq": 1,
+      "date": "2026-10-31",
+      "category": "Watchman / Security",
+      "description": "Watchman salary – October",
+      "amount": 4000,
+      "vendor": "Watchman",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e2",
+      "seq": 2,
+      "date": "2026-10-31",
+      "category": "Electricity (common areas)",
+      "description": "Electricity bill – common areas",
+      "amount": 1565,
+      "vendor": "APEPDCL",
+      "mode": "UPI"
+    },
+    {
+      "id": "2026-10-e3",
+      "seq": 3,
+      "date": "2026-10-31",
+      "category": "GVMC charges",
+      "description": "GVMC charges",
+      "amount": 200,
+      "vendor": "GVMC",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e4",
+      "seq": 4,
+      "date": "2026-10-31",
+      "category": "Housekeeping / Cleaning",
+      "description": "Brooms",
+      "amount": 200,
+      "vendor": "",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e5",
+      "seq": 5,
+      "date": "2026-10-31",
+      "category": "Water (municipal / tanker)",
+      "description": "Municipal water",
+      "amount": 645,
+      "vendor": "GVMC water supply",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e6",
+      "seq": 6,
+      "date": "2026-10-31",
+      "category": "Festival / Mamullu",
+      "description": "Dasara mamullu – GVMC staff",
+      "amount": 500,
+      "vendor": "GVMC",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e7",
+      "seq": 7,
+      "date": "2026-10-31",
+      "category": "Festival / Mamullu",
+      "description": "Dasara mamullu – electricity staff",
+      "amount": 500,
+      "vendor": "APEPDCL",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e8",
+      "seq": 8,
+      "date": "2026-10-31",
+      "category": "Festival / Mamullu",
+      "description": "Dasara mamullu – water supply staff",
+      "amount": 200,
+      "vendor": "GVMC water supply",
+      "mode": "Cash"
+    },
+    {
+      "id": "2026-10-e9",
+      "seq": 9,
+      "date": "2026-10-31",
+      "category": "Festival / Mamullu",
+      "description": "Dasara mamullu – lift technician",
+      "amount": 200,
+      "vendor": "",
+      "mode": "Cash"
+    }
+  ],
+  "payments": [
+    {
+      "id": "2026-10-101",
+      "flatId": "101",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-102",
+      "flatId": "102",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-201",
+      "flatId": "201",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-202",
+      "flatId": "202",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-301",
+      "flatId": "301",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-302",
+      "flatId": "302",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-401",
+      "flatId": "401",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    },
+    {
+      "id": "2026-10-402",
+      "flatId": "402",
+      "month": "2026-10",
+      "amount": 1000,
+      "paidOn": "2026-10-10",
+      "mode": "Cash",
+      "ref": ""
+    }
+  ],
+  "vendors": [
+    {
+      "id": "watchman",
+      "name": "Watchman",
+      "service": "Watchman",
+      "phone": "",
+      "contractAmount": 4000,
+      "period": "Monthly",
+      "amcRenewal": "",
+      "kind": "staff",
+      "role": "Watchman",
+      "salary": 4000,
+      "category": "Watchman / Security",
+      "payMode": "Cash",
+      "duties": [],
+      "shift": ""
+    },
+    {
+      "id": "apepdcl",
+      "name": "APEPDCL",
+      "service": "Common area electricity",
+      "phone": "",
+      "contractAmount": 0,
+      "period": "Monthly",
+      "amcRenewal": ""
+    },
+    {
+      "id": "gvmc",
+      "name": "GVMC",
+      "service": "Garbage collection & municipal charges",
+      "phone": "",
+      "contractAmount": 0,
+      "period": "Monthly",
+      "amcRenewal": ""
+    },
+    {
+      "id": "gvmc-water",
+      "name": "GVMC water supply",
+      "service": "Municipal water",
+      "phone": "",
+      "contractAmount": 0,
+      "period": "Monthly",
+      "amcRenewal": ""
+    }
+  ],
+  "notices": [
+    {
+      "id": "2026-11-maintenance",
+      "date": "2026-10-31",
+      "pinned": true,
+      "title": "November 2026 maintenance",
+      "body": "Maintenance for November is ₹1,000 per flat. The October balance of ₹3,959 has been carried forward to November."
+    }
+  ]
+}
