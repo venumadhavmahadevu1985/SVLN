@@ -53,6 +53,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
 - **Electricity:**
   - **Each flat:** My flat has an **Electricity bill** card. The flat adds its APEPDCL **Service Number** (the Consumer No on the bill or receipt). **View / pay bill** copies the number and opens the Eastern Power bill page, where you paste it (in the installed app it opens in the app window).
+  - **Bill history:** **Bill history 2026-2027** (and last year) opens Eastern Power's PDF of that year's monthly units, bills and payments for the Service Number (a form post to `dwnConsPayPDF`; their years run April–March). The app cannot read Eastern Power's pages itself (they don't allow other sites to), so it opens them for you.
   - **Treasurer:** Dues → **Electricity** lists every flat's Service Number with View bill, the common-area meter(s), and recent common bills with meter reading and units.
   - **Settings → Electricity:** the common meter Service Number(s), one per line ("Common lights: 123456P012345678"), and the bill page link.
   - **Meter readings:** electricity bill expenses (category starting Electricity, Power or Current, or a description like "Power bill") take a **Meter reading** and **Units used**. Units are worked out from the previous reading when left empty, and a reading lower than the previous one is refused.

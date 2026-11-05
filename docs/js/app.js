@@ -1550,12 +1550,28 @@ const commonMeters = () => lines(S.settings.commonElec).map(l => {
 function elecBillLink(no, label = 'View bill', cls = 'btn sm ghost') {
   return elecUrl() ? `<a class="${cls}" href="${esc(elecUrl())}" target="_blank" rel="noopener" data-pay data-copy="${esc(no || '')}" data-copy-what="Service Number">${icon('wallet')}<span>${label}</span></a>` : '';
 }
+// Eastern Power's yearly history (monthly units, bill dates and payments) as a PDF, opened in a new tab.
+// Their years run April–March and are written "2026-2027".
+const ELEC_HISTORY_URL = 'https://www.apeasternpower.com/dwnConsPayPDF';
+const elecYear = (back = 0) => { const [y, m] = todayISO().split('-').map(Number), start = (m >= 4 ? y : y - 1) - back; return `${start}-${start + 1}`; };
+function elecHistoryButtons(no, cls = 'btn sm ghost') {
+  return `<button type="button" class="${cls}" data-action="elec-history" data-no="${esc(no)}" data-year="${elecYear()}">${icon('receipt')}<span>Bill history ${elecYear()}</span></button>
+    <button type="button" class="btn sm ghost" data-action="elec-history" data-no="${esc(no)}" data-year="${elecYear(1)}"><span>${elecYear(1)}</span></button>`;
+}
+function openElecHistory(no, year) {
+  const form = Object.assign(document.createElement('form'), { method: 'post', action: ELEC_HISTORY_URL, target: '_blank' });
+  for (const [k, v] of [['ltscno', no], ['year', year]]) form.append(Object.assign(document.createElement('input'), { type: 'hidden', name: k, value: v }));
+  document.body.append(form);
+  form.submit();
+  form.remove();
+}
 function elecCard(f) {
   const no = S.db.flatProfiles[f.id]?.elecServiceNo;
   return `<div class="card elec-card">
     <div class="card-head"><h2>Electricity bill</h2>
       <button class="btn sm ${no ? 'ghost' : 'primary'}" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add Service Number'}</button></div>
     <dl class="details"><div><dt>Service Number</dt><dd>${no ? `<strong class="elec-no">${esc(no)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div></dl>
+    ${no ? `<div class="elec-history"><span class="pc-title">Units, bills and payments (from Eastern Power)</span><div class="row-btns">${elecHistoryButtons(no)}</div></div>` : ''}
     ${no && elecUrl() ? `<div class="tax-pay">${elecBillLink(no, 'View / pay bill', 'btn primary')}
       <small class="muted">Copies your Service Number — paste it on the Eastern Power page to see or pay the bill.</small></div>` : ''}
     <p class="hint">Each flat pays its own electricity bill. Visible only to this flat and the treasurer.</p>
@@ -1583,7 +1599,7 @@ function duesElec() {
   return `<div class="card elec-common">
     <div class="card-head"><h2>Common area electricity</h2><a class="btn sm ghost" href="#/settings">Change in Settings</a></div>
     ${meters.length ? `<div class="list">${meters.map(m => `<div class="pending-row"><div class="row-main"><strong>${esc(m.label || 'Common meter')}</strong><small>Service Number <span class="elec-no">${esc(m.no)}</span></small></div>
-      ${elecBillLink(m.no)}</div>`).join('')}</div>`
+      <div class="row-btns">${elecHistoryButtons(m.no)}${elecBillLink(m.no)}</div></div>`).join('')}</div>`
       : `<p class="muted">Add the common meter's Service Number in Settings → Electricity.</p>`}
     <h3 class="st-section">Recent bills</h3>
     ${bills.length ? `<div class="table-scroll"><table class="data stack elec-bills"><thead><tr><th>Date</th><th>Bill</th><th class="num">Meter reading</th><th class="num">Units</th><th class="num">Amount</th></tr></thead>
@@ -1597,7 +1613,7 @@ function duesElec() {
     <tbody>${S.db.flats.map(f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo; return `<tr data-elec-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td><td data-label="Owner">${esc(f.owner || '—')}</td>
       <td data-label="Service Number">${no ? `<span class="elec-no">${esc(no)}</span>` : '<span class="muted">Not added</span>'}</td>
-      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
 }
 function elecSettings() {
   return `<form class="card stack" data-form="elec">
@@ -2870,6 +2886,7 @@ const ACTIONS = {
   'edit-profile': ds => profileModal(ds.id),
   'edit-tax': ds => houseTaxModal(ds.id),
   'edit-elec': ds => elecModal(ds.id),
+  'elec-history': ds => openElecHistory(ds.no, ds.year),
   'flat-alert': ds => flatAlertModal(ds.id),
   'alert-suggest': (ds, el) => { const t = el.closest('form').elements.text; t.value = ds.text; t.focus(); el.remove(); },
   async 'remove-alert'(ds) {

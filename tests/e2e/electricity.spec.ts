@@ -32,6 +32,39 @@ test.describe('Electricity', () => {
     await expect(app.main.locator('tr[data-elec-row="101"]')).toContainText('Not added');
   });
 
+  test('Bill history opens Eastern Power\'s yearly PDF for the Service Number (this year and last year)', async ({ app, page }) => {
+    const posts: string[] = [];
+    await page.context().route('https://www.apeasternpower.com/dwnConsPayPDF', route => {
+      posts.push(route.request().postData() || '');
+      return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4 test' });
+    });
+    await app.open('dues', RESIDENT);
+    await expect(app.main.locator('.elec-card [data-action="elec-history"]')).toHaveCount(0);     // needs a Service Number first
+    await app.main.locator('.elec-card').getByRole('button', { name: 'Add Service Number' }).click();
+    await app.field('Service Number').fill('123456P012345678');
+    await app.submitModal();
+    await app.expectToast('Service Number saved');
+    const card = app.main.locator('.elec-card');
+    await expect(card).toContainText('Units, bills and payments (from Eastern Power)');
+    const [pdf] = await Promise.all([page.waitForEvent('popup'), card.getByRole('button', { name: 'Bill history 2026-2027' }).click()]);
+    await expect.poll(() => posts.length).toBe(1);
+    await pdf.close();
+    const [old] = await Promise.all([page.waitForEvent('popup'), card.getByRole('button', { name: '2025-2026', exact: true }).click()]);
+    await expect.poll(() => posts.length).toBe(2);
+    await old.close();
+    expect(posts).toEqual(['ltscno=123456P012345678&year=2026-2027', 'ltscno=123456P012345678&year=2025-2026']);
+    // In January the Eastern Power year is still 2026-2027.
+    await page.clock.setFixedTime(new Date('2027-01-10T10:00:00+05:30'));
+    await app.go('expenses');
+    await app.go('dues');
+    await expect(app.main.locator('.elec-card').getByRole('button', { name: 'Bill history 2026-2027' })).toBeVisible();
+    // The treasurer has the same buttons for every flat and the common meter.
+    await app.viewAs('demo-admin');
+    await app.duesTab('Electricity');
+    await expect(app.main.locator('tr[data-elec-row="302"] [data-action="elec-history"]')).toHaveCount(2);
+    await expect(app.main.locator('tr[data-elec-row="101"] [data-action="elec-history"]')).toHaveCount(0);
+  });
+
   test('a wrong Service Number is refused; clearing it removes it', async ({ app }) => {
     await app.open('dues', RESIDENT);
     await app.main.locator('.elec-card').getByRole('button', { name: 'Add Service Number' }).click();
@@ -62,6 +95,7 @@ test.describe('Electricity', () => {
     await expect(rows.nth(0)).toContainText('123456P012345678');
     await expect(rows.nth(0).getByRole('link', { name: 'View bill' })).toHaveAttribute('data-copy', '123456P012345678');
     await expect(rows.nth(1)).toContainText('Lift');
+    await expect(rows.nth(0).locator('[data-action="elec-history"]').first()).toHaveAttribute('data-no', '123456P012345678');
   });
 
   test('a bad bill page link is refused; an empty one hides the buttons', async ({ app }) => {
