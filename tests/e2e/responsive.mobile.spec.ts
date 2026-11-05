@@ -60,6 +60,12 @@ for (const width of WIDTHS) {
       await app.go('reports');
       await app.main.getByRole('tab', { name: 'Annual summary' }).click();
       expect(await layoutProblems(app.page), 'annual summary').toEqual([]);
+      await app.main.getByRole('tab', { name: 'Electricity' }).click();
+      await expect(app.main.locator('.elec-report .elec-chart svg')).toBeVisible();
+      expect(await layoutProblems(app.page), 'electricity graphs').toEqual([]);
+      await app.main.locator('select[data-change="elec-view"]').selectOption('all');
+      await expect(app.main.locator('.elec-report[data-elec-view="all"] .elec-chart svg')).toBeVisible();
+      expect(await layoutProblems(app.page), 'electricity: all flats').toEqual([]);
     });
 
     test('resident: every page fits the screen', async ({ app }) => {
