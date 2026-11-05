@@ -53,11 +53,19 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 - **Vendors** with AMC renewal alerts, **Notices**, and an **activity log** of every change.
 - **Electricity:**
   - **Each flat:** My flat has an **Electricity bill** card. The flat adds its APEPDCL **Service Number** (the Consumer No on the bill or receipt). **View / pay bill** copies the number and opens the Eastern Power bill page, where you paste it (in the installed app it opens in the app window).
+  - **Until a flat adds it:** their Home shows *Add your electricity Service Number*. Dues → Electricity shows how many flats have added theirs, **Copy reminders** for the rest, and a WhatsApp button for each flat still missing it. The treasurer can also add a flat's number there.
+  - **Current bill, paid / not paid, graph (nightly):** every night at 6:00 am a GitHub job (`.github/workflows/elec-bills.yml`, `scripts/fetch-elec-bills.mjs`) reads each Service Number's bills and payments from Eastern Power (`getConAndPayDetails`) and saves them in `elecBills`. My flat then shows:
+    - the current bill: month, amount, units and due date, with **Paid** / **Due in N days** / **Overdue**;
+    - **View this bill**, and **Pay now** while it is unpaid;
+    - a 12-month units graph and the payments list.
+
+    While unpaid, the flat gets a reminder banner on Home. The treasurer's Dues → Electricity shows every flat's current bill and status, with **Copy bill reminders** and a WhatsApp **Bill reminder** per unpaid flat. The common meter's bill and graph are shown too, and a Home banner appears when the common bill is unpaid within a week of its due date.
   - **Bill history:** **Bill history 2026-2027** (and last year) opens Eastern Power's PDF of that year's monthly units, bills and payments for the Service Number (a form post to `dwnConsPayPDF`; their years run April–March). The app cannot read Eastern Power's pages itself (they don't allow other sites to), so it opens them for you.
   - **Treasurer:** Dues → **Electricity** lists every flat's Service Number with View bill, the common-area meter(s), and recent common bills with meter reading and units.
   - **Settings → Electricity:** the common meter Service Number(s), one per line ("Common lights: 123456P012345678"), and the bill page link.
   - **Meter readings:** electricity bill expenses (category starting Electricity, Power or Current, or a description like "Power bill") take a **Meter reading** and **Units used**. Units are worked out from the previous reading when left empty, and a reading lower than the previous one is refused.
-- **Daily backup:** the first time a treasurer opens the app each day, the full backup (JSON) is saved to that phone or computer automatically (Downloads), once per day. Settings → Data shows the last backup (when, by whom, automatic or not) and has a per-device switch to turn it off. The last backup is recorded in `meta/backup`. The demo keeps it off.
+- **IT role:** full access, like an admin, including Usage and Settings. Give it in Settings → Members.
+- **Daily backup:** only for members with the **IT** role. The first time they open the app each day, the full backup (JSON) is saved to that phone or computer automatically (Downloads), once per day. Settings → Data shows the last backup (when, by whom, automatic or not) and has a per-device switch to turn it off. The last backup is recorded in `meta/backup`. The demo keeps it off.
 - **Split expenses:** one-off costs such as a borewell repair or painting, shared by the flats (Dues → Split expenses → **Split an expense**). Enter what it is for, the total and the category. Then split it equally, by flat area, or by typing each share (0 leaves a flat out); the shares must add up to the total. It can be paid at once or in **2–12 monthly instalments** from a first due date, and a flat may still pay the whole balance at once. Payments fill the earliest instalment first. One tick also adds the cost to Expenses. Each flat sees its share, the instalment schedule, what it has paid and how much the society has collected on My flat, with a banner on Home while anything is pending. The treasurer records payments, sees who has paid, and copies or sends WhatsApp reminders. Money received is counted in the balance and listed in the monthly statement as *Split expense collected: …*.
 - **Costs paid by an owner:** if a flat owner paid for something for the building themselves, they tap **Send a cost** on My flat. They give what it was for, the amount, the date, optional details and an optional bill photo or PDF. The treasurer sees it on Home and at the top of Dues → Split expenses and can view the bill. **Approve & split** opens the split form already filled in, and the treasurer decides how it is shared: equally, by area, or by typed shares, with optional instalments. **Not approve** asks for a reason the owner can see. On approval:
   - the whole bill goes into Expenses as paid to that flat;
@@ -116,6 +124,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `flats/{flatNo}` | owner, sqft, override |
 | `flatProfiles/{flatNo}` | occupancy, residentName, phone, altPhone, email, members, family[] {name, relation, age, phone} (max 20), vehicles, emergencyName, emergencyPhone, taxAssessmentNo, taxOwnerName, taxAmount, taxPenalty, elecServiceNo, taxDoc {name, type, updatedAt}, taxPaid { 'YYYY-MM-DD' due date: {paidOn, amount, receiptNo, by} } (private) |
 | `taxDocs/{flatNo}` | name, type, data (data URL under 1 MB) — the house tax bill (private, like flatProfiles) |
+| `elecBills/{flatNo}` and `elecBills/common-{serviceNo}` | scno, label, flatId or common: true, bills[] {billDate, month, units, amount, dueDate, ebill}, payments[] {paidOn, amount, receiptNo, source}, fetchedAt — written only by the nightly job; a flat reads its own, members read the common meter, admins read all |
 | `flatAlerts/{flatNo}` | title, text (≤500), tone (info / warn / bad), until, at, by |
 | `visits/{id}` | uid, name, flatId, role, at, device, installed, lang, screen (members create their own; admins read/clear) |
 | `clicks/{id}` | uid, name, flatId, role, at, events[] {t, route, label, action} (max 100 per batch; admins read/clear) |
@@ -126,7 +135,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
 | `payments/{id}` | flatId, month, amount, paidOn, mode, ref; a split-expense payment has `levyId` instead of `month`; the owner's adjusted share has `auto: true` (counted under `special[month]['<levyId>:adj']`) |
 | `vendors/{id}` | name, service, phone, contractAmount, period, amcRenewal, notes. Staff are vendors with `kind: 'staff'` plus role, salary, shift, joinedOn, duties[], category, payMode, upi |
 | `notices/{id}` | title, body, date, pinned |
-| `users/{uid}` | email, name, phone, role (pending / resident / admin), flatId, requestedFlat |
+| `users/{uid}` | email, name, phone, role (pending / resident / admin / it), flatId, requestedFlat |
 | `auditLog/{id}` | at, by, byName, action, entity, entityId, summary (append-only) |
 
 ## Branches: stage and prod
@@ -168,6 +177,18 @@ git push origin prod
 git switch stage
 ```
 Every push to either branch runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which publishes both sites.
+
+## Electricity bills: one-time setup (nightly job)
+
+The job needs a key for each Firebase project so it can save the bills. Do this once for **prod** (svln-paradise) and once for **stage** (svln-paradise-stage):
+
+1. Open Firebase console, choose the project, then ⚙ **Project settings → Service accounts → Generate new private key**. A `.json` file downloads. Keep it private and don't share it.
+2. On GitHub, open **SVLN → Settings → Secrets and variables → Actions → New repository secret**.
+   - Name: `FIREBASE_SA_PROD` for prod, or `FIREBASE_SA_STAGE` for stage.
+   - Secret: paste the whole content of the `.json` file.
+3. Run it once now: **Actions → Electricity bills (nightly) → Run workflow**. After that it runs every morning at 6:00 am.
+
+A project without its secret is skipped. You can delete the downloaded `.json` file once it is saved in GitHub.
 
 ## Run locally
 

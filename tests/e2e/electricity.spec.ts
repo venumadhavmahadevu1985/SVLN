@@ -65,6 +65,45 @@ test.describe('Electricity', () => {
     await expect(app.main.locator('tr[data-elec-row="101"] [data-action="elec-history"]')).toHaveCount(0);
   });
 
+  test('until a flat adds its Service Number, Home asks for it; the treasurer sees who is missing and can remind them', async ({ app, page }) => {
+    await app.open('dashboard', RESIDENT);
+    const nudge = app.main.locator('.elec-nudge');
+    await expect(nudge).toContainText('Add your electricity Service Number');
+    await nudge.getByRole('button', { name: 'Add Service Number' }).click();
+    await expect(app.modal.locator('h2')).toHaveText('Electricity · Flat 302');
+    await app.field('Service Number').fill('123456P012345678');
+    await app.submitModal();
+    await app.expectToast('Service Number saved');
+    await expect(nudge).toHaveCount(0);
+
+    await app.viewAs('demo-admin');
+    await expect(app.main.locator('.elec-nudge')).toHaveCount(0);           // not on the treasurer's Home
+    await app.duesTab('Electricity');
+    // Sample data: Flat 201 already has one.
+    await expect(app.main.locator('.elec-count')).toHaveText('2 of 8 flats have added their Service Number');
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await app.main.getByRole('button', { name: 'Copy reminders (6)' }).click();
+    await app.expectToast('Reminders copied — paste them in WhatsApp');
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    expect(text.split(/\r?\n\r?\n/)).toHaveLength(6);
+    expect(text).not.toContain('(Flat 302)');
+    expect(text).not.toContain('(Flat 201)');
+    expect(text).toContain('please add your electricity Service Number (the Consumer No on your power bill)');
+    // Flats with a number added get no "add it" WhatsApp button.
+    await expect(app.main.locator('tr[data-elec-row="302"]').getByRole('link', { name: 'WhatsApp' })).toHaveCount(0);
+  });
+
+  test('a flat still missing its number, with a mobile, gets a WhatsApp reminder to add it', async ({ app }) => {
+    await app.open();
+    await app.duesTab('Electricity');
+    await app.main.locator('tr[data-elec-row="201"]').getByRole('button', { name: 'Edit' }).click();
+    await app.field('Service Number').fill('');
+    await app.submitModal();
+    await app.expectToast('Service Number saved');
+    const wa = app.main.locator('tr[data-elec-row="201"]').getByRole('link', { name: 'WhatsApp' });
+    await expect(wa).toHaveAttribute('href', /^https:\/\/wa\.me\/919000000201\?text=Namaste.*electricity%20Service%20Number/);
+  });
+
   test('a wrong Service Number is refused; clearing it removes it', async ({ app }) => {
     await app.open('dues', RESIDENT);
     await app.main.locator('.elec-card').getByRole('button', { name: 'Add Service Number' }).click();

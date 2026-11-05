@@ -19,7 +19,7 @@ const S = {
   user: null,
   info: null,          // public/info: society name + address (readable before sign-in)
   hasSettings: false,
-  db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], claims: [], expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
+  db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], claims: [], elecBills: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...FALLBACK },
   collections: {},
   special: {},         // split-expense money received: { 'YYYY-MM': { levyId: amount } }
@@ -34,7 +34,9 @@ const S = {
 
 const $ = sel => document.querySelector(sel);
 const $view = $('#view'), $modal = $('#modal');
-const isAdmin = () => S.user?.role === 'admin';
+const isAdmin = () => ['admin', 'it'].includes(S.user?.role);
+const isIT = () => S.user?.role === 'it';
+const roleLabel = r => r === 'it' ? 'IT' : 'Admin';
 const sum = (arr, f = x => x) => arr.reduce((a, x) => a + (Number(f(x)) || 0), 0);
 const uniq = arr => [...new Set(arr.filter(Boolean))];
 const lines = v => String(v || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean);
@@ -203,6 +205,9 @@ async function loadData() {
   const profiles = isAdmin() ? await store.list('flatProfiles')
     : S.user.flatId ? [await store.get('flatProfiles', S.user.flatId)].filter(Boolean) : [];
   const levies = await store.list('levies').catch(() => []);
+  // Bills fetched nightly from Eastern Power: admins see all; a flat sees its own and the common meter(s).
+  const elecBills = await (isAdmin() ? store.list('elecBills')
+    : Promise.all([S.user.flatId ? store.get('elecBills', S.user.flatId) : null, store.list('elecBills', ['common', '==', true])]).then(([mine, common]) => [mine, ...common].filter(Boolean))).catch(() => []);
   const claims = await (isAdmin() ? store.list('claims')
     : S.user.flatId ? store.list('claims', ['flatId', '==', S.user.flatId]) : Promise.resolve([])).catch(() => []);
   const alerts = await (isAdmin() ? store.list('flatAlerts')
@@ -211,6 +216,7 @@ async function loadData() {
     flats: flats.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })),
     flatProfiles: Object.fromEntries(profiles.map(p => [p.id, p])),
     flatAlerts: Object.fromEntries(alerts.map(a => [a.id, a])),
+    elecBills: Object.fromEntries(elecBills.map(b => [b.id, b])),
     claims: claims.sort((a, b) => (b.at || '').localeCompare(a.at || '')),
     levies: levies.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || '')),
     expenses, vendors, notices, payments, users: [], auditLog: [],
@@ -349,7 +355,7 @@ const demoSwitcher = () => `<label class="sr-only" for="demoAccount">View as</la
 function renderChrome() {
   renderBrand();
   const who = !S.user ? '' : store.demo ? demoSwitcher() : `
-    <span class="who"><strong>${esc(S.user.name)}</strong><small>${S.user.role === 'admin' ? 'Admin' : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
+    <span class="who"><strong>${esc(S.user.name)}</strong><small>${isAdmin() ? roleLabel(S.user.role) : S.user.flatId ? 'Flat ' + esc(S.user.flatId) : 'Resident'}</small></span>
     <button class="btn sm ghost" data-action="sign-out">Sign out</button>`;
   $('#userBox').innerHTML = stagePill() + who + langBtn() + themeBtn();
   renderNav();
@@ -390,7 +396,7 @@ function onlineNowHtml() {
   const me = list.find(p => p.id === S.user?.uid);
   const others = list.filter(p => p !== me).sort((a, b) => (a.flatId || '').localeCompare(b.flatId || '') || (a.name || '').localeCompare(b.name || ''));
   const who = p => `<li class="online-chip"><span class="dot" aria-hidden="true"></span><span>${p === me ? 'You' : esc(p.name || 'Member')}</span>
-    <small>${p.role === 'admin' ? 'Admin' + (p.flatId ? ' · ' + esc(p.flatId) : '') : p.flatId ? 'Flat ' + esc(p.flatId) : 'Resident'}</small></li>`;
+    <small>${['admin', 'it'].includes(p.role) ? roleLabel(p.role) + (p.flatId ? ' · ' + esc(p.flatId) : '') : p.flatId ? 'Flat ' + esc(p.flatId) : 'Resident'}</small></li>`;
   const n = list.length;
   return `<div class="online-head"><span class="dot live" aria-hidden="true"></span><strong>${n} ${n === 1 ? 'person' : 'people'} online now</strong>
     ${n === 1 && me ? '<small class="muted">Only you right now</small>' : ''}</div>
@@ -442,7 +448,7 @@ function deviceName() {
   return `${os} · ${app}`;
 }
 const whoFields = () => ({ uid: S.user.uid, name: S.user.name || S.user.email || '', flatId: S.user.flatId || null, role: S.user.role });
-const isMemberUser = () => !!S.user && ['admin', 'resident'].includes(S.user.role);
+const isMemberUser = () => !!S.user && ['admin', 'it', 'resident'].includes(S.user.role);
 
 function logVisit() {
   if (!isMemberUser()) return;
@@ -492,7 +498,7 @@ function viewUsage() {
   for (const e of events) if (e.label !== 'Opened page') top[e.label] = (top[e.label] || 0) + 1;
   const pages = {};
   for (const e of events) if (e.label === 'Opened page') pages[e.action] = (pages[e.action] || 0) + 1;
-  const whoLabel = x => `${esc(x.name || 'Member')}${x.flatId ? ` · Flat ${esc(x.flatId)}` : x.role === 'admin' ? ' · Admin' : ''}`;
+  const whoLabel = x => `${esc(x.name || 'Member')}${x.flatId ? ` · Flat ${esc(x.flatId)}` : ['admin', 'it'].includes(x.role) ? ` · ${roleLabel(x.role)}` : ''}`;
   const time = iso => dateTimeLabel(iso);
   return `
     <div class="page-head"><div><h1>Usage</h1><p class="muted">Who opens the app and what they tap. Visible only to admins.</p></div>
@@ -563,7 +569,7 @@ const VIEWS = {
 };
 
 function route() {
-  if (!S.user || !['admin', 'resident'].includes(S.user.role) || !S.hasSettings) return;
+  if (!S.user || !['admin', 'it', 'resident'].includes(S.user.role) || !S.hasSettings) return;
   let r = location.hash.replace(/^#\/?/, '') || 'dashboard';
   if (!VIEWS[r] || (NAV.find(n => n[0] === r)?.[3] && !isAdmin())) r = 'dashboard';
   const changed = r !== S.route;
@@ -638,6 +644,8 @@ function viewDashboard() {
     ${!isAdmin() && S.user.flatId ? levyBanner() : ''}
     ${taxBanners()}
     ${!isAdmin() ? myProfileNudge() : ''}
+    ${!isAdmin() ? myElecNudge() : ''}
+    ${elecBanners()}
     ${isAdmin() ? profileSummaryCard() : ''}
     ${quickLinks()}
     <section class="kpis">
@@ -978,7 +986,7 @@ function duesFlats() {
 function flatLogins(flatId) {
   const users = S.db.users || [];
   return {
-    active: users.filter(u => u.flatId === flatId && ['resident', 'admin'].includes(u.role)),
+    active: users.filter(u => u.flatId === flatId && ['resident', 'admin', 'it'].includes(u.role)),
     waiting: users.filter(u => u.role === 'pending' && u.requestedFlat === flatId),
   };
 }
@@ -986,7 +994,7 @@ function loginsHtml(flatId) {
   const { active, waiting } = flatLogins(flatId);
   if (!active.length && !waiting.length) return '<span class="muted">No one has signed in yet</span>';
   const li = (u, badge) => `<li><strong>${esc(u.name || u.email || '')}</strong>${badge}${u.email ? `<small>${esc(u.email)}</small>` : ''}</li>`;
-  return `<ul class="logins">${active.map(u => li(u, u.role === 'admin' ? ' <span class="badge ok">admin</span>' : '')).join('')}${
+  return `<ul class="logins">${active.map(u => li(u, ['admin', 'it'].includes(u.role) ? ` <span class="badge ok">${u.role === 'it' ? 'IT' : 'admin'}</span>` : '')).join('')}${
     waiting.map(u => li(u, ' <span class="badge warn">waiting for approval</span>')).join('')}</ul>`;
 }
 
@@ -1565,12 +1573,76 @@ function openElecHistory(no, year) {
   form.submit();
   form.remove();
 }
+// Flats that have not added their Service Number yet: a nudge on their Home, reminders for the treasurer.
+const elecMissing = () => S.db.flats.filter(f => !S.db.flatProfiles[f.id]?.elecServiceNo);
+function elecReminder(f) {
+  const who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, please add your electricity Service Number (the Consumer No on your power bill) in the SVLN app under My flat → Electricity bill. Then you can see your full bill history and pay from the app: ${siteLink()}#/dues`;
+}
+function myElecNudge() {
+  const f = flatById(S.user.flatId);
+  if (!f || S.db.flatProfiles[f.id]?.elecServiceNo) return '';
+  return `<div class="banner info elec-nudge">${icon('wallet')}<div>
+    <strong>Add your electricity Service Number</strong>
+    <span>It is the Consumer No on your power bill. Then you can see all your bills and payments, and pay, from the app.</span>
+    <div class="row-btns"><button type="button" class="btn sm primary" data-action="edit-elec" data-id="${esc(f.id)}">Add Service Number</button></div></div></div>`;
+}
+// ----- the bills themselves (saved nightly by scripts/fetch-elec-bills.mjs) -----
+const flatElec = f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo, b = S.db.elecBills[f.id]; return no && b?.scno === no ? b : null; };
+const commonElecBills = m => S.db.elecBills['common-' + m.no.replace(/[^A-Za-z0-9-]/g, '')] || null;
+const shortMonth = mk => monthShort(mk);
+// The latest bill, and whether it has been paid (payments on or after its bill date cover it).
+function elecStatus(b) {
+  const bill = b?.bills?.[0];
+  if (!bill) return null;
+  const paidSince = (b.payments || []).filter(x => x.paidOn >= bill.billDate), paid = sum(paidSince, x => x.amount);
+  const days = bill.dueDate ? daysUntil(bill.dueDate) : null;
+  if (paid >= Math.round(bill.amount) - 1) return { bill, key: 'paid', cls: 'ok', label: `Paid ${dateLabel(paidSince.at(-1)?.paidOn || bill.billDate)}`, paid };
+  return { bill, key: days !== null && days < 0 ? 'overdue' : 'due', cls: days !== null && days < 0 ? 'bad' : 'warn', paid, days,
+    label: days === null ? 'Not paid yet' : days < 0 ? `Overdue · was due ${dateLabel(bill.dueDate)}` : days === 0 ? 'Due today' : `Due in ${days} day${days === 1 ? '' : 's'}` };
+}
+function elecBillBox(b, no) {
+  const st = elecStatus(b);
+  if (!st) return `<p class="muted">No bills found yet for this Service Number. They are checked every night.</p>`;
+  const { bill } = st, last12 = [...b.bills].slice(0, 12).reverse();
+  return `<div class="elec-current ${st.key}">
+      <div><span class="pc-title">${esc(monthLabel(bill.month, true))} bill</span><strong class="elec-amt">${money(Math.round(bill.amount))}</strong>
+        <small>${bill.units} units${bill.dueDate ? ` · due ${dateLabel(bill.dueDate)}` : ''}</small></div>
+      <span class="badge ${st.cls}">${esc(st.label)}</span></div>
+    <div class="row-btns">${bill.ebill ? `<a class="btn sm ghost" href="${esc(bill.ebill)}" target="_blank" rel="noopener">${icon('receipt')}<span>View this bill</span></a>` : ''}
+      ${st.key !== 'paid' ? elecBillLink(no, 'Pay now', 'btn sm primary') : ''}</div>
+    ${last12.length > 1 ? `<div class="elec-chart">${barChart(last12.map(x => shortMonth(x.month)), [{ name: 'Units used', cls: 'in', values: last12.map(x => x.units) }], { title: 'Units used each month', fmt: v => String(Math.round(v)) })}</div>` : ''}
+    ${b.payments?.length ? `<details class="elec-pays"><summary>Payments (${b.payments.length})</summary><ul>${b.payments.slice(0, 12).map(x => `<li><span>${dateLabel(x.paidOn)}</span><strong>${money(x.amount)}</strong><small>${esc(x.receiptNo)}</small></li>`).join('')}</ul></details>` : ''}
+    <p class="hint">From Eastern Power · checked ${b.fetchedAt ? dateTimeLabel(b.fetchedAt) : ''}</p>`;
+}
+function elecPayReminder(f, b) {
+  const st = elecStatus(b), who = f.owner ? `${f.owner} garu (Flat ${f.id})` : `Flat ${f.id}`;
+  return `Namaste ${who}, a gentle reminder from ${societyName()}: your electricity bill for ${monthLabel(st.bill.month, true)} is ${money(Math.round(st.bill.amount))} (${st.bill.units} units)${st.bill.dueDate ? `, due by ${dateLabel(st.bill.dueDate)}` : ''}. Service Number ${b.scno}. You can pay from the SVLN app: ${siteLink()}#/dues — ${S.settings.treasurer || ''}`.replace(/\s+/g, ' ').trim();
+}
+const elecUnpaid = () => S.db.flats.map(f => ({ f, b: flatElec(f) })).filter(x => x.b && elecStatus(x.b) && elecStatus(x.b).key !== 'paid');
+// Home: a flat's own unpaid bill; for the treasurer, an unpaid common bill.
+function elecBanners() {
+  if (!isAdmin()) {
+    const f = flatById(S.user.flatId), b = f && flatElec(f), st = b && elecStatus(b);
+    if (!st || st.key === 'paid') return '';
+    return `<div class="banner ${st.cls} elec-banner">${icon('wallet')}<div>
+      <strong>Electricity bill ${money(Math.round(st.bill.amount))} · ${esc(st.label)}</strong>
+      <span>${esc(monthLabel(st.bill.month, true))} · ${st.bill.units} units · not paid yet</span>
+      <div class="row-btns">${elecBillLink(b.scno, 'Pay now', 'btn sm primary')}${st.bill.ebill ? `<a class="btn sm ghost" href="${esc(st.bill.ebill)}" target="_blank" rel="noopener"><span>View bill</span></a>` : ''}<a class="btn sm ghost" href="#/dues">Details</a></div></div></div>`;
+  }
+  return commonMeters().map(m => ({ m, st: elecStatus(commonElecBills(m)) })).filter(x => x.st && x.st.key !== 'paid' && x.st.days !== null && x.st.days <= 7)
+    .map(({ m, st }) => `<a class="banner ${st.cls} elec-banner" href="#/dues" data-action="open-elec">${icon('wallet')}<div>
+      <strong>Common electricity bill ${money(Math.round(st.bill.amount))} · ${esc(st.label)}</strong>
+      <span>${esc(m.label || 'Common meter')} · ${esc(monthLabel(st.bill.month, true))} · ${st.bill.units} units · not paid yet</span></div></a>`).join('');
+}
+
 function elecCard(f) {
   const no = S.db.flatProfiles[f.id]?.elecServiceNo;
   return `<div class="card elec-card">
     <div class="card-head"><h2>Electricity bill</h2>
       <button class="btn sm ${no ? 'ghost' : 'primary'}" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add Service Number'}</button></div>
     <dl class="details"><div><dt>Service Number</dt><dd>${no ? `<strong class="elec-no">${esc(no)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div></dl>
+    ${no && flatElec(f) ? elecBillBox(flatElec(f), no) : ''}
     ${no ? `<div class="elec-history"><span class="pc-title">Units, bills and payments (from Eastern Power)</span><div class="row-btns">${elecHistoryButtons(no)}</div></div>` : ''}
     ${no && elecUrl() ? `<div class="tax-pay">${elecBillLink(no, 'View / pay bill', 'btn primary')}
       <small class="muted">Copies your Service Number — paste it on the Eastern Power page to see or pay the bill.</small></div>` : ''}
@@ -1599,7 +1671,8 @@ function duesElec() {
   return `<div class="card elec-common">
     <div class="card-head"><h2>Common area electricity</h2><a class="btn sm ghost" href="#/settings">Change in Settings</a></div>
     ${meters.length ? `<div class="list">${meters.map(m => `<div class="pending-row"><div class="row-main"><strong>${esc(m.label || 'Common meter')}</strong><small>Service Number <span class="elec-no">${esc(m.no)}</span></small></div>
-      <div class="row-btns">${elecHistoryButtons(m.no)}${elecBillLink(m.no)}</div></div>`).join('')}</div>`
+      <div class="row-btns">${elecHistoryButtons(m.no)}${elecBillLink(m.no)}</div></div>
+      ${commonElecBills(m) ? `<div class="elec-common-bill">${elecBillBox(commonElecBills(m), m.no)}</div>` : ''}`).join('')}</div>`
       : `<p class="muted">Add the common meter's Service Number in Settings → Electricity.</p>`}
     <h3 class="st-section">Recent bills</h3>
     ${bills.length ? `<div class="table-scroll"><table class="data stack elec-bills"><thead><tr><th>Date</th><th>Bill</th><th class="num">Meter reading</th><th class="num">Units</th><th class="num">Amount</th></tr></thead>
@@ -1608,12 +1681,17 @@ function duesElec() {
         <td class="num" data-label="Units">${e.units ? esc(e.units) : '—'}</td><td class="num" data-label="Amount">${money(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
       : empty('No electricity bills recorded yet. Use Monthly bills → Electricity Bill on Home.')}
   </div>
-  <div class="card"><div class="card-head"><h2>Each flat's electricity</h2><span class="muted">Each flat pays its own bill</span></div>
-    <div class="table-scroll"><table class="data stack elec-table"><thead><tr><th>Flat</th><th>Owner</th><th>Service Number</th><th></th></tr></thead>
+  <div class="card"><div class="card-head"><div><h2>Each flat's electricity</h2><p class="muted elec-count">${S.db.flats.length - elecMissing().length} of ${S.db.flats.length} flats have added their Service Number</p></div>
+      <div class="row-btns">${elecUnpaid().length ? `<button class="btn sm ghost" data-action="copy-elec-pay-reminders">${icon('copy')}<span>Copy bill reminders (${elecUnpaid().length})</span></button>` : ''}
+      ${elecMissing().length ? `<button class="btn sm ghost" data-action="copy-elec-reminders">${icon('copy')}<span>Copy reminders (${elecMissing().length})</span></button>` : ''}</div></div>
+    <div class="table-scroll"><table class="data stack elec-table"><thead><tr><th>Flat</th><th>Owner</th><th>Service Number</th><th>Current bill</th><th></th></tr></thead>
     <tbody>${S.db.flats.map(f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo; return `<tr data-elec-row="${esc(f.id)}">
       <td class="stack-title"><strong>${esc(f.id)}</strong></td><td data-label="Owner">${esc(f.owner || '—')}</td>
       <td data-label="Service Number">${no ? `<span class="elec-no">${esc(no)}</span>` : '<span class="muted">Not added</span>'}</td>
-      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+      <td data-label="Current bill" class="elec-bill-cell">${(st => st ? `${money(Math.round(st.bill.amount))} <small class="muted">${esc(monthLabel(st.bill.month))} · ${st.bill.units} units</small> <span class="badge ${st.cls}">${esc(st.label)}</span>` : '<span class="muted">—</span>')(elecStatus(flatElec(f)))}</td>
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) + ((b, wa) => b && elecStatus(b)?.key !== 'paid' && elecStatus(b) && wa
+          ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(elecPayReminder(f, b))}">${icon('chat')}<span>Bill reminder</span></a>` : '')(flatElec(f), waNumber(S.db.flatProfiles[f.id]?.phone))
+        : (wa => wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(elecReminder(f))}">${icon('chat')}<span>WhatsApp</span></a>` : '')(waNumber(S.db.flatProfiles[f.id]?.phone))}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
 }
 function elecSettings() {
   return `<form class="card stack" data-form="elec">
@@ -2591,9 +2669,9 @@ const ENTITY_LABELS = {
 function membersCard() {
   const users = [...S.db.users].sort((a, b) => (a.role === 'pending' ? -1 : 0) - (b.role === 'pending' ? -1 : 0) || (a.name || '').localeCompare(b.name || ''));
   const flatOpts = sel => `<option value="">—</option>` + S.db.flats.map(f => `<option value="${esc(f.id)}"${f.id === sel ? ' selected' : ''}>${esc(f.id)}</option>`).join('');
-  const roleOpts = sel => ['pending', 'resident', 'admin'].map(r => `<option${r === sel ? ' selected' : ''}>${r}</option>`).join('');
+  const roleOpts = sel => [['pending', 'pending'], ['resident', 'resident'], ['admin', 'admin'], ['it', 'IT']].map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`).join('');
   return `<div class="card">
-    <div class="card-head"><h2>Members</h2><span class="muted">Approve residents and link them to their flat</span></div>
+    <div class="card-head"><h2>Members</h2><span class="muted">Approve residents and link them to their flat. IT: full access, and the daily backup is saved on their device.</span></div>
     ${users.length ? `<div class="table-scroll"><table class="data stack members-table">
       <thead><tr><th>Name</th><th>Role</th><th>Flat</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr data-uid="${esc(u.id)}">
@@ -2620,8 +2698,8 @@ function backupJson() {
 // phone or computer (Downloads). Can be turned off per device; meta/backup records the last one for every admin.
 const AUTO_BACKUP_KEY = 'svln-auto-backup', LAST_BACKUP_KEY = 'svln-last-backup';
 const backupName = () => `${fileSlug()}-backup-${todayISO()}.json`;
-// On by default on the real site; the demo leaves it off unless switched on (it has nothing worth keeping).
-const autoBackupOn = () => (lsGet(AUTO_BACKUP_KEY) || (store.demo ? 'off' : 'on')) === 'on';
+// Only for IT members. On by default on the real site; the demo leaves it off unless switched on.
+const autoBackupOn = () => isIT() && (lsGet(AUTO_BACKUP_KEY) || (store.demo ? 'off' : 'on')) === 'on';
 async function saveBackup(auto) {
   download(backupName(), backupJson(), 'application/json');
   lsSet(LAST_BACKUP_KEY, todayISO());
@@ -2630,7 +2708,7 @@ async function saveBackup(auto) {
   try { await store.put('meta', doc); } catch { /* the file is saved even if this note is not */ }
 }
 async function dailyBackup() {
-  if (!isAdmin() || !autoBackupOn() || lsGet(LAST_BACKUP_KEY) === todayISO()) return;
+  if (!autoBackupOn() || lsGet(LAST_BACKUP_KEY) === todayISO()) return;
   try {
     await saveBackup(true);
     toast(`Today's backup saved: ${backupName()}`);
@@ -2640,7 +2718,8 @@ function backupStatus() {
   const b = S.lastBackup, mine = lsGet(LAST_BACKUP_KEY);
   return `<p class="backup-status">${b?.at ? `Last backup: <strong>${esc(dateTimeLabel(b.at))}</strong> by ${esc(b.by || '')}${b.auto ? ' (automatic)' : ''}` : 'No backup taken yet.'}${
     mine ? ` · On this device: ${esc(dateLabel(mine))}` : ''}</p>
-    <label class="check"><input type="checkbox" data-change="auto-backup"${autoBackupOn() ? ' checked' : ''}> Save a backup automatically once a day on this device (the first time I open the app)</label>`;
+    ${isIT() ? `<label class="check"><input type="checkbox" data-change="auto-backup"${autoBackupOn() ? ' checked' : ''}> Save a backup automatically once a day on this device (the first time I open the app)</label>`
+      : '<p class="hint backup-it-note">The automatic daily backup is saved on the device of members with the IT role (Settings → Members).</p>'}`;
 }
 
 async function importData(file) {
@@ -2887,6 +2966,9 @@ const ACTIONS = {
   'edit-tax': ds => houseTaxModal(ds.id),
   'edit-elec': ds => elecModal(ds.id),
   'elec-history': ds => openElecHistory(ds.no, ds.year),
+  'copy-elec-pay-reminders': () => copyText(elecUnpaid().map(x => elecPayReminder(x.f, x.b)).join('\n\n'), 'Reminders copied — paste them in WhatsApp'),
+  'open-elec': () => { S.ui.duesTab = 'elec'; location.hash = '#/dues'; if (S.route === 'dues') rerender(); },
+  'copy-elec-reminders': () => copyText(elecMissing().map(elecReminder).join('\n\n'), 'Reminders copied — paste them in WhatsApp'),
   'flat-alert': ds => flatAlertModal(ds.id),
   'alert-suggest': (ds, el) => { const t = el.closest('form').elements.text; t.value = ds.text; t.focus(); el.remove(); },
   async 'remove-alert'(ds) {
@@ -3144,7 +3226,7 @@ async function onAuthChange(fbUser) {
     await store.put('users', prof);
   }
   Object.assign(S.user, { email: prof.email, name: prof.name, role: prof.role, flatId: prof.flatId, requestedFlat: prof.requestedFlat, phone: prof.phone });
-  if (!['admin', 'resident'].includes(prof.role)) return renderPending();
+  if (!['admin', 'it', 'resident'].includes(prof.role)) return renderPending();
   await start();
 }
 
