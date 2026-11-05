@@ -620,3 +620,8 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 
 /* Daily backup */
 .backup-status { margin: 0; }
+
+/* Electricity */
+.elec-no { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.elec-fields { gap: 12px; }
+.elec-fields[hidden] { display: none; }

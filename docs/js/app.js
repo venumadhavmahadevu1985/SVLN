@@ -795,6 +795,11 @@ function expenseForm(e = {}) {
     ${datalist('vendorList', vendors)}
     <label class="field"><span>Payment mode</span><input name="mode" list="modeList" maxlength="30" value="${esc(e.mode || modeList()[0] || '')}"></label>
     ${datalist('modeList', modeList())}
+    <div class="elec-fields span2 form-grid" data-elec-fields${isElecExpense(e) ? '' : ' hidden'}>
+      <label class="field"><span>Meter reading</span><input type="number" name="meterReading" min="0" step="1" inputmode="numeric" value="${esc(e.meterReading ?? '')}"></label>
+      <label class="field"><span>Units used</span><input type="number" name="units" min="0" step="1" inputmode="numeric" value="${esc(e.units ?? '')}"></label>
+      ${(pr => pr ? `<p class="hint span2" data-prev-reading="${esc(pr.meterReading)}">Previous reading: ${esc(Number(pr.meterReading).toLocaleString('en-IN'))} on ${dateLabel(pr.date)}. Units are worked out from it if left empty.</p>` : '')(prevReading(e.id ? e : null))}
+    </div>
     <label class="field span2"><span>Paid by</span><input name="paidBy" maxlength="60" value="${esc(e.paidBy || S.settings.treasurer || '')}"></label>
     <div class="field span2"><label for="receiptIn"><span>Receipt or bill (photo or PDF)</span></label>
       <input id="receiptIn" type="file" name="receipt" accept="image/*,application/pdf">
@@ -815,6 +820,16 @@ async function submitExpense(fd, existing) {
     paidBy: fd.get('paidBy').trim(),
   };
   if (!(doc.amount > 0)) throw new Error('Enter an amount greater than zero.');
+  // Meter reading and units only for electricity bills; units come from the previous reading when left empty.
+  delete doc.meterReading; delete doc.units;
+  if (isElecExpense(doc)) {
+    const reading = Math.round(Number(fd.get('meterReading'))) || 0, prev = prevReading(existing);
+    let units = Math.round(Number(fd.get('units'))) || 0;
+    if (reading && prev && reading < Number(prev.meterReading)) throw new Error(`The meter reading is lower than the previous one (${Number(prev.meterReading).toLocaleString('en-IN')}).`);
+    if (reading && !units && prev) units = reading - Number(prev.meterReading);
+    if (reading) doc.meterReading = reading;
+    if (units) doc.units = units;
+  }
   if (fd.get('removeReceipt')) delete doc.receipt;
   const file = fd.get('receipt');
   if (file && file.size) doc.receipt = await store.upload(file);
@@ -833,6 +848,7 @@ function showExpense(id) {
     <dl class="details">
       ${item('Date', dateLabel(e.date))}${item('Category', esc(e.category))}${item('Paid to', esc(e.vendor))}
       ${item('Payment mode', esc(e.mode))}${item('Paid by', esc(e.paidBy))}
+      ${item('Meter reading', e.meterReading ? esc(Number(e.meterReading).toLocaleString('en-IN')) : '')}${item('Units used', e.units ? esc(e.units) : '')}
       ${item('Recorded', esc([e.createdBy, e.createdAt && dateTimeLabel(e.createdAt)].filter(Boolean).join(' · ')))}
     </dl>
     ${r ? `<div class="receipt">${isImg ? `<img src="${esc(r.url)}" alt="Receipt for ${esc(e.description)}">` : ''}
@@ -873,11 +889,11 @@ const billingSummary = () => {
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
-  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax']];
+  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax'], ['elec', 'Electricity']];
   return `
     <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
-    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : duesFlats()}`;
+    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : tab === 'elec' ? duesElec() : duesFlats()}`;
 }
 
 function duesGrid() {
@@ -1005,6 +1021,7 @@ function duesResident() {
     <div class="page-head"><div><h1>Flat ${esc(f.id)}</h1><p class="muted">${f.owner ? esc(f.owner) + ' · ' : ''}${money(dueAmount(f))} per month, due by the ${ordinal(S.settings.dueDay)}</p></div></div>
     ${flatAlertBanner(f.id)}
     ${taxOwed(f.id) ? houseTaxCard(f) + flatDetailsCard(f) : flatDetailsCard(f) + houseTaxCard(f)}
+    ${elecCard(f)}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
@@ -1515,6 +1532,82 @@ function flatDetailsCard(f) {
       <p class="hint">Updated ${p.updatedAt ? dateTimeLabel(p.updatedAt) : ''}${p.updatedBy ? ' by ' + esc(p.updatedBy) : ''}. Phone numbers are visible only to this flat and the treasurer.</p>`
       : '<p class="muted">No details yet. Add the owner name and a phone number so the treasurer can reach this flat.</p>'}
   </div>`;
+}
+
+// ----- electricity: each flat's Service Number (APEPDCL) and the common-area meter -----
+// flatProfiles.elecServiceNo; settings.commonElec ["Label: number" per line] and settings.elecBillUrl.
+// Electricity expenses can carry the meter reading and units.
+const DEFAULT_ELEC_URL = 'https://www.apeasternpower.com/viewBillDetailsMain';
+const elecUrl = () => S.settings.elecBillUrl ?? DEFAULT_ELEC_URL;
+// A bill for electricity used (not electrical repairs, nor a tip for the electricity staff).
+const ELEC_CAT = /^(electricity|power|current)\b(?!\s*(staff|repair))/i, ELEC_DESC = /^(electricity|power|current) bill|apepdcl|eastern power/i;
+const isElecExpense = e => ELEC_CAT.test(e.category || '') || ELEC_DESC.test(e.description || '');
+// "Common lights: 123456P012345678" → { label, no }; a bare number has no label.
+const commonMeters = () => lines(S.settings.commonElec).map(l => {
+  const i = l.lastIndexOf(':');
+  return i > 0 ? { label: l.slice(0, i).trim(), no: l.slice(i + 1).trim() } : { label: '', no: l };
+}).filter(m => m.no);
+function elecBillLink(no, label = 'View bill', cls = 'btn sm ghost') {
+  return elecUrl() ? `<a class="${cls}" href="${esc(elecUrl())}" target="_blank" rel="noopener" data-pay data-copy="${esc(no || '')}" data-copy-what="Service Number">${icon('wallet')}<span>${label}</span></a>` : '';
+}
+function elecCard(f) {
+  const no = S.db.flatProfiles[f.id]?.elecServiceNo;
+  return `<div class="card elec-card">
+    <div class="card-head"><h2>Electricity bill</h2>
+      <button class="btn sm ${no ? 'ghost' : 'primary'}" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add Service Number'}</button></div>
+    <dl class="details"><div><dt>Service Number</dt><dd>${no ? `<strong class="elec-no">${esc(no)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div></dl>
+    ${no && elecUrl() ? `<div class="tax-pay">${elecBillLink(no, 'View / pay bill', 'btn primary')}
+      <small class="muted">Copies your Service Number — paste it on the Eastern Power page to see or pay the bill.</small></div>` : ''}
+    <p class="hint">Each flat pays its own electricity bill. Visible only to this flat and the treasurer.</p>
+  </div>`;
+}
+function elecModal(flatId) {
+  const p = S.db.flatProfiles[flatId] || {};
+  openModal(`Electricity · Flat ${flatId}`, `<p class="muted">The Service Number is on the electricity bill or payment receipt (also called Consumer No).</p>
+    <label class="field"><span>Service Number</span><input name="elecServiceNo" maxlength="30" autocomplete="off" value="${esc(p.elecServiceNo || '')}" placeholder="e.g. 123456P012345678"></label>`, {
+    onSubmit: async fd => {
+      const no = String(fd.get('elecServiceNo') || '').replace(/\s+/g, '').toUpperCase();
+      if (no && !/^[A-Z0-9/-]{5,30}$/.test(no)) throw new Error('Enter the Service Number as printed on the bill (letters and numbers only).');
+      await save('flatProfiles', { ...p, id: flatId, elecServiceNo: no }, `Flat ${flatId} electricity Service Number${no ? '' : ' removed'}`);
+      await refresh('Service Number saved');
+    },
+  });
+}
+// The common-area bill: latest electricity expenses with their meter readings.
+const elecExpenses = () => S.db.expenses.filter(isElecExpense).sort((a, b) => byExpenseOrder(b, a));
+function prevReading(before) {
+  return elecExpenses().find(e => Number(e.meterReading) > 0 && (!before || byExpenseOrder(e, before) < 0 && e.id !== before.id));
+}
+function duesElec() {
+  const meters = commonMeters(), bills = elecExpenses().slice(0, 6);
+  return `<div class="card elec-common">
+    <div class="card-head"><h2>Common area electricity</h2><a class="btn sm ghost" href="#/settings">Change in Settings</a></div>
+    ${meters.length ? `<div class="list">${meters.map(m => `<div class="pending-row"><div class="row-main"><strong>${esc(m.label || 'Common meter')}</strong><small>Service Number <span class="elec-no">${esc(m.no)}</span></small></div>
+      ${elecBillLink(m.no)}</div>`).join('')}</div>`
+      : `<p class="muted">Add the common meter's Service Number in Settings → Electricity.</p>`}
+    <h3 class="st-section">Recent bills</h3>
+    ${bills.length ? `<div class="table-scroll"><table class="data stack elec-bills"><thead><tr><th>Date</th><th>Bill</th><th class="num">Meter reading</th><th class="num">Units</th><th class="num">Amount</th></tr></thead>
+      <tbody>${bills.map(e => `<tr><td class="stack-title">${dateLabel(e.date)}</td><td data-label="Bill">${esc(e.description)}</td>
+        <td class="num" data-label="Meter reading">${e.meterReading ? esc(Number(e.meterReading).toLocaleString('en-IN')) : '—'}</td>
+        <td class="num" data-label="Units">${e.units ? esc(e.units) : '—'}</td><td class="num" data-label="Amount">${money(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
+      : empty('No electricity bills recorded yet. Use Monthly bills → Electricity Bill on Home.')}
+  </div>
+  <div class="card"><div class="card-head"><h2>Each flat's electricity</h2><span class="muted">Each flat pays its own bill</span></div>
+    <div class="table-scroll"><table class="data stack elec-table"><thead><tr><th>Flat</th><th>Owner</th><th>Service Number</th><th></th></tr></thead>
+    <tbody>${S.db.flats.map(f => { const no = S.db.flatProfiles[f.id]?.elecServiceNo; return `<tr data-elec-row="${esc(f.id)}">
+      <td class="stack-title"><strong>${esc(f.id)}</strong></td><td data-label="Owner">${esc(f.owner || '—')}</td>
+      <td data-label="Service Number">${no ? `<span class="elec-no">${esc(no)}</span>` : '<span class="muted">Not added</span>'}</td>
+      <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecBillLink(no) : ''}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+}
+function elecSettings() {
+  return `<form class="card stack" data-form="elec">
+    <h2>Electricity</h2>
+    <p class="hint">The common-area meter(s) the society pays for. One per line, e.g. <em>Common lights: 123456P012345678</em>. Each flat adds its own Service Number on My flat.</p>
+    <label class="field"><span>Common meter Service Number(s)</span><textarea name="commonElec" rows="2" maxlength="300">${esc(S.settings.commonElec || '')}</textarea></label>
+    <label class="field"><span>Bill page link</span><input type="url" name="elecBillUrl" maxlength="300" value="${esc(elecUrl())}" placeholder="https://…">
+      <small class="muted">Opens when someone taps View bill (the Service Number is copied first). Leave empty to hide the button.</small></label>
+    <div><button class="btn primary">Save</button></div>
+  </form>`;
 }
 
 // ----- individual alerts: a banner the treasurer sets for one flat (flatAlerts/{flatNo}) -----
@@ -2457,6 +2550,7 @@ function viewSettings() {
     </form>
     ${renameCategoryCard()}
     ${houseTaxSettings()}
+    ${elecSettings()}
     ${membersCard()}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
@@ -2775,6 +2869,7 @@ const ACTIONS = {
     .map(r => reminderText(r.f, r.o)).join('\n\n')),
   'edit-profile': ds => profileModal(ds.id),
   'edit-tax': ds => houseTaxModal(ds.id),
+  'edit-elec': ds => elecModal(ds.id),
   'flat-alert': ds => flatAlertModal(ds.id),
   'alert-suggest': (ds, el) => { const t = el.closest('form').elements.text; t.value = ds.text; t.focus(); el.remove(); },
   async 'remove-alert'(ds) {
@@ -2872,6 +2967,12 @@ const FORMS = {
   async renameCategory(fd) {
     await renameCategory(String(fd.get('from') || ''), String(fd.get('to') || '').trim());
   },
+  async elec(fd) {
+    const elecBillUrl = String(fd.get('elecBillUrl') || '').trim();
+    if (elecBillUrl && !/^https:\/\/\S+$/.test(elecBillUrl)) throw new Error('The bill page link must start with https://');
+    await saveSettings({ commonElec: String(fd.get('commonElec') || '').trim(), elecBillUrl }, 'Electricity settings updated');
+    await refresh('Electricity settings saved');
+  },
   async houseTax(fd) {
     const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));
     for (const d of houseTaxDue) {
@@ -2946,7 +3047,7 @@ function bindEvents() {
     if (no && navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(no);
-        toast(`Assessment number ${no} copied — paste it on the payment page`);
+        toast(`${a.dataset.copyWhat || 'Assessment number'} ${no} copied — paste it on the ${a.dataset.copyWhat ? 'bill' : 'payment'} page`);
       } catch { /* clipboard blocked: the number is shown on the page */ }
     }
     if (inApp) location.assign(a.href);
@@ -2965,6 +3066,9 @@ function bindEvents() {
     } catch (err) { console.error(err); toast(friendlyError(err), 'bad'); }
   });
   document.addEventListener('input', e => {
+    const elecBox = e.target.form?.querySelector('[data-elec-fields]');
+    if (elecBox && ['category', 'description'].includes(e.target.name))
+      elecBox.hidden = !isElecExpense({ category: e.target.form.elements.category.value, description: e.target.form.elements.description.value });
     const box = e.target.closest?.('[data-levy-form]');
     if (box) return updateLevyForm(box, ['total', 'split'].includes(e.target.name));
     const key = e.target.dataset?.filter;
