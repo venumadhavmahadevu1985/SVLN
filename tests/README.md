@@ -30,7 +30,7 @@ Firestore emulator, so it needs Java. GitHub Actions runs both on every push and
   `docs/demo-data.json` held in memory. No Firebase account or network is needed, and nothing is saved.
 - The clock is frozen at **5 Nov 2026, 10:00 IST** (`tests/fixtures.ts`). November dues are therefore *Due*
   (not yet overdue) and October is the last full month. Tests that need another date set it themselves.
-- Starting data: October 2026 notebook page. 8 flats paid ₹1,000, ₹3,969 brought forward,
+- Starting data (made up): 8 flats paid ₹1,000, ₹3,969 brought forward,
   9 expenses = ₹8,010, closing balance ₹3,959.
 - `App` in `tests/fixtures.ts` holds the page helpers (open as treasurer or resident, add expense,
   record payment, read the statement…).

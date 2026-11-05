@@ -8,7 +8,11 @@ Every flat signs in with its own account. The treasurer (admin) manages everythi
 
 **No society data is stored in the code.** The name, address, flats, amounts, categories, payment modes, expenses,
 payments, vendors and notices all live in **Firebase Firestore**. They're entered through the site or imported from a
-data file such as [`data/2026-10-notebook.json`](data/2026-10-notebook.json), which holds the October 2026 notebook page.
+data file (Settings → Data → Import data file). Real data files are kept off this public repository.
+
+**Privacy:** this repository and the demo are public, so they contain only made-up data. Everything real (flats,
+phones, money, bills, Service Numbers) lives in Firebase and is visible only to signed-in, approved members, as
+`firestore.rules` allows. Before signing in, only the society name is shown.
 
 ## Who can do what
 
@@ -60,6 +64,7 @@ Residents can read payments only for their own flat. Monthly totals come from `m
     - a 12-month units graph and the payments list.
 
     While unpaid, the flat gets a reminder banner on Home. The treasurer's Dues → Electricity shows every flat's current bill and status, with **Copy bill reminders** and a WhatsApp **Bill reminder** per unpaid flat. The common meter's bill and graph are shown too, and a Home banner appears when the common bill is unpaid within a week of its due date.
+  - **Graphs (Reports → Electricity):** units or amount (₹) each month for the last 12 months, with total, monthly average, highest month, the same month a year ago, and a table of bills and payments. Every member sees the common meter; each flat sees its own; the treasurer can pick any flat or **All flats · compare** (latest bill of each flat). Until the nightly data exists, the common graph uses the electricity bills recorded in Expenses. My flat → **Electricity graphs** opens the flat's graph.
   - **Bill history:** **Bill history 2026-2027** (and last year) opens Eastern Power's PDF of that year's monthly units, bills and payments for the Service Number (a form post to `dwnConsPayPDF`; their years run April–March). The app cannot read Eastern Power's pages itself (they don't allow other sites to), so it opens them for you.
   - **Treasurer:** Dues → **Electricity** lists every flat's Service Number with View bill, the common-area meter(s), and recent common bills with meter reading and units.
   - **Settings → Electricity:** the common meter Service Number(s), one per line ("Common lights: 123456P012345678"), and the bill page link.
@@ -110,14 +115,14 @@ Residents can read payments only for their own flat. Monthly totals come from `m
    You can also paste `firestore.rules` into *Firestore → Rules* in the console.
 4. Open the site and sign in. **The first person to sign in on an empty database becomes the admin** and sees
    *Set up your society*. Do this straight after deploying.
-5. In **Settings → Data → Import data file**, choose `data/2026-10-notebook.json` to load October 2026.
+5. In **Settings → Data → Import data file**, choose your data file (kept outside this repository) to load past months.
 6. Share the link. Each resident signs in, enters their flat number, and you tap **Approve** in **Settings → Members**.
 
 ## Data model (Firestore)
 
 | Collection | Fields |
 |---|---|
-| `public/info` | name, address (shown on the sign-in page) |
+| `public/info` | name only (shown on the sign-in page; the rules allow nothing else) |
 | `meta/settings` | name, address, treasurer, billing, fixedAmount, ratePerSqft, dueDay, fyStartMonth, openingBalance, startMonth, payNote, categories[], paymentModes[], quickExpenses[], houseTaxDue[] {label, month, day}, houseTaxRemindDays, houseTaxPayUrl, commonElec (lines "Label: Service Number"), elecBillUrl |
 | `meta/collections` | basis: 'dues-month', byMonth { 'YYYY-MM': total paid towards that month's dues }, special { 'YYYY-MM': { levyId: split-expense money received that month } } |
 | `levies/{id}` | title, category, total, date, split (equal / area / custom), shares { flatNo: ₹ }, instalments (1–12), dueDate (first instalment), note, expenseId — split expenses; members read, admins write |

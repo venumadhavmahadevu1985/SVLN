@@ -637,3 +637,12 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .elec-pays li small { color: var(--muted); overflow-wrap: anywhere; }
 .elec-common-bill { padding: 4px 0 10px; border-bottom: 1px solid var(--border); }
 .elec-bill-cell .badge { white-space: nowrap; }
+/* Reports → Electricity graphs */
+.elec-report-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.elec-report-controls .inline-field { max-width: 100%; flex: 1 1 220px; }
+.elec-report-controls select { max-width: 100%; }
+.elec-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0; }
+.elec-stats > div { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); min-width: 0; }
+.elec-stats strong { font-size: 20px; }
+.elec-stats small { color: var(--muted); overflow-wrap: anywhere; }
+.elec-report-table td small { color: var(--muted); }

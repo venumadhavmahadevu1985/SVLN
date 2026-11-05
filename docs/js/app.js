@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
 import { getLang, setLang, startTelugu } from './i18n.js';
 import {
-  esc, money, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
+  esc, money, moneyShort, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
   addDays, newId, fyStart, fyLabel, daysUntil, pad, lastDay, trunc, ordinal, waNumber, friendlyError, profileCompleteness, NO_VEHICLES,
 } from './util.js';
 
@@ -17,7 +17,7 @@ const DEFAULT_QUICK = ['Watchman', 'Electricity Bill', 'GVMC', 'Municipal Water'
 // ---------- state & small helpers ----------
 const S = {
   user: null,
-  info: null,          // public/info: society name + address (readable before sign-in)
+  info: null,          // public/info: society name only (readable before sign-in)
   hasSettings: false,
   db: { flats: [], flatProfiles: {}, flatAlerts: {}, levies: [], claims: [], elecBills: {}, expenses: [], payments: [], vendors: [], notices: [], users: [], auditLog: [] },
   settings: { ...FALLBACK },
@@ -26,7 +26,7 @@ const S = {
   route: 'dashboard',
   ui: {
     exp: { q: '', month: 'all', category: 'all', vendor: 'all', sort: 'date-desc' },
-    duesTab: 'grid', fy: null, reportTab: 'monthly', reportMonth: null, reportFy: null,
+    duesTab: 'grid', fy: null, reportTab: 'monthly', elecView: null, elecMeasure: 'units', reportMonth: null, reportFy: null,
     spendView: null,   // "Where the money went": a month (YYYY-MM) or 'year'; null = current month
   },
   online: null,        // people using the app right now (null = not available)
@@ -282,12 +282,12 @@ async function refresh(msg) {
   if (msg) toast(msg);
 }
 
-// Settings are private to members; name + address are also copied to public/info for the sign-in page.
+// Settings are private to members; only the society name is copied to public/info for the sign-in page.
 async function saveSettings(patch, summary) {
   const { id, createdAt, createdBy, updatedAt, updatedBy, ...clean } = { ...S.settings, ...patch };
   await save('meta', { ...clean, id: 'settings' }, summary);
-  await store.put('public', { id: 'info', name: clean.name || '', address: clean.address || '', updatedAt: new Date().toISOString() });
-  S.info = { name: clean.name || '', address: clean.address || '' };
+  await store.put('public', { id: 'info', name: clean.name || '', updatedAt: new Date().toISOString() });
+  S.info = { name: clean.name || '' };
 }
 
 // ---------- modal ----------
@@ -1643,6 +1643,7 @@ function elecCard(f) {
       <button class="btn sm ${no ? 'ghost' : 'primary'}" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add Service Number'}</button></div>
     <dl class="details"><div><dt>Service Number</dt><dd>${no ? `<strong class="elec-no">${esc(no)}</strong>` : '<span class="muted">Not added yet</span>'}</dd></div></dl>
     ${no && flatElec(f) ? elecBillBox(flatElec(f), no) : ''}
+    <div class="row-btns"><button type="button" class="btn sm ghost" data-action="elec-graph" data-view="flat:${esc(f.id)}">${icon('chart')}<span>Electricity graphs</span></button></div>
     ${no ? `<div class="elec-history"><span class="pc-title">Units, bills and payments (from Eastern Power)</span><div class="row-btns">${elecHistoryButtons(no)}</div></div>` : ''}
     ${no && elecUrl() ? `<div class="tax-pay">${elecBillLink(no, 'View / pay bill', 'btn primary')}
       <small class="muted">Copies your Service Number — paste it on the Eastern Power page to see or pay the bill.</small></div>` : ''}
@@ -1692,6 +1693,89 @@ function duesElec() {
       <td class="num stack-full"><div class="row-btns end"><button class="btn sm ghost" data-action="edit-elec" data-id="${esc(f.id)}">${no ? 'Edit' : 'Add'}</button>${no ? elecHistoryButtons(no) + elecBillLink(no) + ((b, wa) => b && elecStatus(b)?.key !== 'paid' && elecStatus(b) && wa
           ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(elecPayReminder(f, b))}">${icon('chat')}<span>Bill reminder</span></a>` : '')(flatElec(f), waNumber(S.db.flatProfiles[f.id]?.phone))
         : (wa => wa ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(elecReminder(f))}">${icon('chat')}<span>WhatsApp</span></a>` : '')(waNumber(S.db.flatProfiles[f.id]?.phone))}</div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+}
+// ----- Reports → Electricity: graphs of units / amount per month -----
+// Common meter(s): every member. A flat: that flat (and the treasurer, who can pick any flat or compare all).
+// Monthly rows [{ month, units, amount, paidOn }] oldest first, from the nightly Eastern Power data.
+function elecRows(b, n = 12) {
+  const bills = (b?.bills || []).slice(0, n), pays = [...(b?.payments || [])].sort((x, y) => x.paidOn.localeCompare(y.paidOn));
+  return bills.map((x, i) => {
+    const next = bills[i - 1]?.billDate || '9999';     // bills are newest first
+    const paid = pays.filter(y => y.paidOn >= x.billDate && y.paidOn < next);
+    return { month: x.month, units: Number(x.units) || 0, amount: Number(x.amount) || 0, due: x.dueDate, paidOn: paid[0]?.paidOn || null, paid: sum(paid, y => y.amount) };
+  }).reverse();
+}
+// Before the nightly data exists: the common bills the treasurer recorded as expenses, per month.
+function elecExpenseRows(n = 12) {
+  const by = new Map();
+  for (const e of elecExpenses()) {
+    const mk = e.date.slice(0, 7), r = by.get(mk) || { month: mk, units: 0, amount: 0, paidOn: e.date, hasUnits: false };
+    r.amount += Number(e.amount) || 0;
+    if (Number(e.units) > 0) { r.units += Number(e.units); r.hasUnits = true; }
+    if (e.date > r.paidOn) r.paidOn = e.date;
+    by.set(mk, r);
+  }
+  return [...by.values()].sort((a, b) => b.month.localeCompare(a.month)).slice(0, n).reverse();
+}
+function elecViews() {
+  const views = [];
+  for (const m of commonMeters()) if (commonElecBills(m)) views.push({ id: 'common:' + m.no, label: `Common · ${m.label || 'Common meter'}`, rows: () => elecRows(commonElecBills(m)), src: commonElecBills(m) });
+  if (!views.length && elecExpenses().length) views.push({ id: 'common:expenses', label: 'Common area (recorded bills)', rows: () => elecExpenseRows(), fromExpenses: true });
+  const flats = isAdmin() ? S.db.flats : S.db.flats.filter(f => f.id === S.user.flatId);
+  for (const f of flats) views.push({ id: 'flat:' + f.id, label: `Flat ${f.id}${isAdmin() && f.owner ? ` · ${f.owner}` : ''}`, flat: f, rows: () => elecRows(flatElec(f)), src: flatElec(f) });
+  if (isAdmin()) views.push({ id: 'all', label: 'All flats · compare' });
+  return views;
+}
+function elecReport() {
+  const views = elecViews();
+  if (!views.length) return `<div class="card">${empty('No electricity bills yet.')}</div>`;
+  const v = views.find(x => x.id === S.ui.elecView) || views[0], measure = S.ui.elecMeasure === 'amount' ? 'amount' : 'units';
+  const seg = `<div class="seg sm" role="tablist" aria-label="Show">
+      <button role="tab" aria-selected="${measure === 'units'}" class="${measure === 'units' ? 'active' : ''}" data-action="elec-measure" data-m="units">Units</button>
+      <button role="tab" aria-selected="${measure === 'amount'}" class="${measure === 'amount' ? 'active' : ''}" data-action="elec-measure" data-m="amount">Amount (₹)</button></div>`;
+  const picker = `<div class="toolbar-inline no-print elec-report-controls">
+      <label class="field inline-field"><span>Meter</span><select data-change="elec-view">${views.map(x => `<option value="${esc(x.id)}"${x === v ? ' selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>${seg}</div>`;
+  const fmtOf = m => m === 'amount' ? { fmt: moneyShort, tip: v => money(Math.round(v)) } : { fmt: v => String(Math.round(v)) };
+  const name = measure === 'amount' ? 'Bill amount' : 'Units used';
+
+  if (v.id === 'all') {
+    const rows = S.db.flats.map(f => ({ f, st: elecStatus(flatElec(f)) }));
+    const withBill = rows.filter(x => x.st);
+    return `${picker}<article class="card statement printable elec-report" data-elec-view="all">
+      ${statementHeader('Electricity · all flats', 'Latest bill of each flat')}
+      ${withBill.length ? `<div class="elec-chart">${barChart(rows.map(x => x.f.id), [{ name, cls: 'in', values: rows.map(x => x.st ? (measure === 'amount' ? Math.round(x.st.bill.amount) : x.st.bill.units) : 0) }], { title: `${name} · latest bill of each flat`, ...fmtOf(measure) })}</div>` : `<p class="muted">No flat's bill has been fetched yet. Flats appear here once they add their Service Number and the nightly check runs.</p>`}
+      <div class="table-scroll"><table class="st-table elec-report-table"><thead><tr><th>Flat</th><th>Month</th><th class="num">Units</th><th class="num">Bill</th><th>Status</th></tr></thead>
+      <tbody>${rows.map(({ f, st }) => `<tr data-flat="${esc(f.id)}"><td>${esc(f.id)}${f.owner ? ` <small>${esc(f.owner)}</small>` : ''}</td>${st
+        ? `<td>${esc(monthLabel(st.bill.month))}</td><td class="num">${st.bill.units}</td><td class="num">${money(Math.round(st.bill.amount))}</td><td><span class="badge ${st.cls}">${esc(st.label)}</span></td>`
+        : `<td colspan="4" class="muted">${S.db.flatProfiles[f.id]?.elecServiceNo ? 'Not fetched yet' : 'Service Number not added'}</td>`}</tr>`).join('')}</tbody></table></div>
+    </article>`;
+  }
+
+  const rows = v.rows(), noUnits = v.fromExpenses && !rows.some(r => r.hasUnits);
+  const m = noUnits ? 'amount' : measure, mName = m === 'amount' ? 'Bill amount' : 'Units used';
+  const head = statementHeader('Electricity', v.label);
+  if (!rows.length) {
+    const why = v.flat && !S.db.flatProfiles[v.flat.id]?.elecServiceNo ? 'This flat has not added its electricity Service Number yet (My flat → Electricity bill).' : 'No bills found yet for this Service Number. They are checked every night.';
+    return `${picker}<article class="card statement printable elec-report" data-elec-view="${esc(v.id)}">${head}<p class="muted">${esc(why)}</p></article>`;
+  }
+  const total = sum(rows, r => r[m]), avg = total / rows.length, top = rows.reduce((a, r) => r[m] > a[m] ? r : a, rows[0]);
+  const show = x => m === 'amount' ? money(Math.round(x)) : String(Math.round(x));
+  const latest = rows.at(-1), prevYear = rows.find(r => r.month === (Number(latest.month.slice(0, 4)) - 1) + latest.month.slice(4));
+  return `${picker}<article class="card statement printable elec-report" data-elec-view="${esc(v.id)}">
+    ${head}
+    ${noUnits ? `<p class="hint">Units are not recorded on these bills, so the graph shows the amount. Add the meter reading on electricity bills to see units.</p>` : ''}
+    <div class="elec-stats">
+      <div><span class="pc-title">Last ${rows.length} month${rows.length === 1 ? '' : 's'}</span><strong>${show(total)}</strong><small>${m === 'amount' ? 'total billed' : 'units in all'}</small></div>
+      <div><span class="pc-title">Average a month</span><strong>${show(avg)}</strong><small>${m === 'amount' ? 'per bill' : 'units'}</small></div>
+      <div><span class="pc-title">Highest</span><strong>${show(top[m])}</strong><small>${esc(monthLabel(top.month, true))}</small></div>
+      ${prevYear ? `<div><span class="pc-title">${esc(monthLabel(latest.month))} vs a year ago</span><strong>${(d => `${d > 0 ? '+' : ''}${Math.round(d)}%`)(prevYear[m] ? (latest[m] - prevYear[m]) / prevYear[m] * 100 : 0)}</strong><small>${show(prevYear[m])} in ${esc(monthLabel(prevYear.month))}</small></div>` : ''}
+    </div>
+    <div class="elec-chart">${barChart(rows.map(r => shortMonth(r.month)), [{ name: mName, cls: m === 'amount' ? 'out' : 'in', values: rows.map(r => m === 'amount' ? Math.round(r.amount) : r.units) }], { title: `${mName} each month`, ...fmtOf(m) })}</div>
+    <div class="table-scroll"><table class="st-table elec-report-table"><thead><tr><th>Month</th><th class="num">Units</th><th class="num">Bill</th><th>${v.fromExpenses ? 'Recorded on' : 'Paid'}</th></tr></thead>
+      <tbody>${[...rows].reverse().map(r => `<tr data-month="${esc(r.month)}"><td>${esc(monthLabel(r.month, true))}</td><td class="num">${v.fromExpenses && !r.hasUnits ? '—' : r.units}</td><td class="num">${money(Math.round(r.amount))}</td>
+        <td>${r.paidOn ? `${dateLabel(r.paidOn)}${!v.fromExpenses && r.paid ? ` <small>${money(r.paid)}</small>` : ''}` : '<span class="badge warn">Not paid yet</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="hint">${v.fromExpenses ? 'From the electricity bills recorded in Expenses. Once the common meter is added in Settings → Electricity, this shows Eastern Power\'s own figures.' : `From Eastern Power · checked ${v.src?.fetchedAt ? dateTimeLabel(v.src.fetchedAt) : ''}`}</p>
+  </article>`;
 }
 function elecSettings() {
   return `<form class="card stack" data-form="elec">
@@ -2415,8 +2499,9 @@ function viewReports() {
       <button role="tab" aria-selected="${tab === 'monthly'}" class="${tab === 'monthly' ? 'active' : ''}" data-action="report-tab" data-tab="monthly">Monthly statement</button>
       <button role="tab" aria-selected="${tab === 'annual'}" class="${tab === 'annual' ? 'active' : ''}" data-action="report-tab" data-tab="annual">Annual summary</button>
       <button role="tab" aria-selected="${tab === 'split'}" class="${tab === 'split' ? 'active' : ''}" data-action="report-tab" data-tab="split">Split expenses</button>
+      <button role="tab" aria-selected="${tab === 'elec'}" class="${tab === 'elec' ? 'active' : ''}" data-action="report-tab" data-tab="elec">Electricity</button>
     </div>
-    ${tab === 'monthly' ? monthlyReport() : tab === 'split' ? levyReport() : annualReport()}`;
+    ${tab === 'monthly' ? monthlyReport() : tab === 'split' ? levyReport() : tab === 'elec' ? elecReport() : annualReport()}`;
 }
 
 function statementHeader(title, sub) {
@@ -2796,7 +2881,6 @@ function renderLogin() {
     <section class="auth card">
       <img src="icons/icon-192.png" alt="" width="64" height="64">
       <h1>${esc(S.info?.name || 'Maintenance accounts')}</h1>
-      ${S.info?.address ? `<p class="muted">${esc(S.info.address)}</p>` : ''}
       <p>${S.info ? 'Sign in to see the maintenance accounts.' : 'Sign in to set up your society\'s accounts.'}</p>
       ${installBanner()}
       <button class="btn primary block" data-action="login-google">Continue with Google</button>
@@ -2998,6 +3082,8 @@ const ACTIONS = {
   },
 
   'report-tab': ds => { S.ui.reportTab = ds.tab; rerender(); },
+  'elec-measure': ds => { S.ui.elecMeasure = ds.m; rerender(); },
+  'elec-graph': ds => { S.ui.reportTab = 'elec'; S.ui.elecView = ds.view; location.hash = '#/reports'; rerender(); },
   'rfy-prev': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), -12); rerender(); },
   'rfy-next': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), 12); rerender(); },
 
@@ -3115,6 +3201,7 @@ const FORMS = {
 
 const CHANGES = {
   'report-month': v => { S.ui.reportMonth = v; rerender(); },
+  'elec-view': v => { S.ui.elecView = v; rerender(); },
   'spend-view': v => { S.ui.spendView = v; rerender(); },
   'usage-who': v => { S.ui.usageWho = v; rerender(); },
   'auto-backup': (_, input) => { lsSet(AUTO_BACKUP_KEY, input.checked ? 'on' : 'off'); toast(input.checked ? 'Daily backup is on for this device' : 'Daily backup is off for this device'); },
@@ -3212,6 +3299,8 @@ async function start() {
   route();
   startPresence();
   dailyBackup();
+  if (isAdmin() && S.info && Object.keys(S.info).some(k => !['id', 'name', 'updatedAt'].includes(k)))
+    store.put('public', { id: 'info', name: S.info.name || '', updatedAt: new Date().toISOString() }).then(() => { S.info = { name: S.info.name || '' }; }).catch(console.error);
 }
 
 async function onAuthChange(fbUser) {
