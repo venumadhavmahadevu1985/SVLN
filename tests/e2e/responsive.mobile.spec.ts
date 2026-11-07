@@ -163,6 +163,22 @@ for (const width of WIDTHS) {
       expect(await layoutProblems(page), 'split report').toEqual([]);
     });
 
+    test('Deepawali greeting and crackers fit the screen, in English and Telugu', async ({ app, page }) => {
+      await page.route('**/demo-data.json', async route => {
+        const d = await (await route.fetch()).json();
+        d.collections.meta.find((m: any) => m.id === 'settings').festival = { on: true, greeting: '', until: '2026-11-09', since: '2026-11-01T10:00:00.000Z' };
+        await route.fulfill({ json: d });
+      });
+      await app.open('dashboard', RESIDENT);
+      await expect(app.main.locator('.fest-banner')).toBeVisible();
+      await expect(page.locator('canvas#crackers')).toHaveCount(1);
+      expect(await layoutProblems(page), 'festival home').toEqual([]);
+      await page.locator('#userBox .lang-btn').click();
+      await expect(app.main.locator('.fest-banner strong')).toHaveText('దీపావళి శుభాకాంక్షలు!');
+      await expect(app.main.locator('.fest-banner')).toContainText('టపాసులు పేల్చండి');
+      expect(await layoutProblems(page), 'festival home (te)').toEqual([]);
+    });
+
     test('Telugu: every page fits the screen', async ({ app, page }) => {
       await app.open();
       await page.locator('#userBox .lang-btn').click();
