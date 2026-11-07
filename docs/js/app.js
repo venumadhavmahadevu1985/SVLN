@@ -3,6 +3,7 @@
 import { ENV } from './config.js';
 import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
+import { startCrackers, stopCrackers, burstCrackers, reducedMotion } from './crackers.js';
 import { getLang, setLang, startTelugu } from './i18n.js';
 import {
   esc, money, moneyShort, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
@@ -373,6 +374,7 @@ function renderNav() {
 // Full-screen messages (sign-in, setup, waiting) hide the navigation.
 function renderBare(html) {
   document.body.classList.add('bare');
+  stopCrackers();   // sign-in, setup and waiting pages: no crackers
   renderBrand();
   $('#userBox').innerHTML = stagePill() + (!S.user ? '' : store?.demo ? demoSwitcher() : '<button class="btn sm ghost" data-action="sign-out">Sign out</button>') + langBtn() + themeBtn();
   $view.removeAttribute('aria-busy');
@@ -582,6 +584,7 @@ function rerender() {
   renderNav();
   $view.removeAttribute('aria-busy');
   $view.innerHTML = VIEWS[S.route]();
+  syncCrackers();
 }
 
 // ---------- dashboard ----------
@@ -626,6 +629,7 @@ function viewDashboard() {
   return `
     <div class="page-head"><div><h1>Overview</h1><p class="muted">${esc(monthLabel(cm, true))} · ${fyLabel(fy)}</p></div>
       ${isAdmin() ? `<div class="actions"><button class="btn ghost" data-action="add-notice">${icon('megaphone')}<span>Post notice</span></button></div>` : ''}</div>
+    ${festBanner()}
     ${!isAdmin() && S.user.flatId ? flatAlertBanner(S.user.flatId) : ''}
     <section id="onlineNow" class="online-now" aria-live="polite"${S.online ? '' : ' hidden'}>${onlineNowHtml()}</section>
     ${installBanner()}
@@ -1788,6 +1792,47 @@ function elecSettings() {
   </form>`;
 }
 
+// ----- festival: Deepawali crackers over the app (settings.festival { on, greeting, until, since }) -----
+// The treasurer switches it on (optionally until a date); each person can turn it off on their own device.
+const FEST_OFF_KEY = 'svln-fest-off';
+function festivalActive() {
+  const f = S.settings.festival;
+  return !!(f?.on && (!f.until || todayISO() <= f.until));
+}
+// "Off on this device" remembers which switch-on it was, so the next festival shows again.
+const festOffHere = () => festivalActive() && lsGet(FEST_OFF_KEY) === (S.settings.festival.since || 'on');
+function syncCrackers() {
+  if (S.user && festivalActive() && !festOffHere()) startCrackers();
+  else stopCrackers();
+}
+function festBanner() {
+  if (!festivalActive()) return '';
+  const f = S.settings.festival, off = festOffHere(), calm = reducedMotion();
+  return `<div class="banner fest-banner"><span class="fest-diyas" aria-hidden="true">🪔</span><div>
+    <strong>${esc(f.greeting || 'Happy Deepawali!')}</strong>
+    <span>${esc(societyName() ? `From all of us at ${societyName()}` : 'From all of us')}${f.until ? ` · crackers till ${dateLabel(f.until)}` : ''}</span>
+    ${calm ? '' : `<div class="row-btns">${off
+      ? `<button type="button" class="btn sm primary" data-action="fest-on">🎆 <span>Turn on crackers</span></button>`
+      : `<button type="button" class="btn sm primary" data-action="fest-burst">🎆 <span>Burst crackers</span></button>
+         <button type="button" class="btn sm ghost" data-action="fest-off"><span>Turn off crackers</span></button>`}</div>`}
+  </div></div>`;
+}
+function festivalSettings() {
+  const f = S.settings.festival || {};
+  return `<form class="card stack" data-form="festival">
+    <h2>Festival greetings</h2>
+    <p class="hint">Deepawali crackers burst over the app for every member, with a greeting on Home. Each person can turn them off on their own phone.</p>
+    <label class="field check"><input type="checkbox" name="festOn"${f.on ? ' checked' : ''}><span>Show Deepawali crackers on the app</span></label>
+    <div class="form-grid">
+      <label class="field"><span>Greeting</span><input name="festGreeting" maxlength="80" value="${esc(f.greeting || '')}" placeholder="Happy Deepawali!"></label>
+      <label class="field"><span>Show until (optional)</span><input type="date" name="festUntil" value="${esc(f.until || '')}">
+        <small class="muted">They switch off by themselves after this day. Leave empty to keep them on until you turn them off.</small></label>
+    </div>
+    ${f.on && f.until && f.until < todayISO() ? `<p class="muted fest-ended">Ended on ${dateLabel(f.until)}.</p>` : ''}
+    <div><button class="btn primary">Save</button></div>
+  </form>`;
+}
+
 // ----- individual alerts: a banner the treasurer sets for one flat (flatAlerts/{flatNo}) -----
 const ALERT_TONES = [['info', 'Information'], ['warn', 'Reminder'], ['bad', 'Urgent']];
 function activeAlert(flatId) {
@@ -2730,6 +2775,7 @@ function viewSettings() {
     ${renameCategoryCard()}
     ${houseTaxSettings()}
     ${elecSettings()}
+    ${festivalSettings()}
     ${membersCard()}
     <div class="card">
       <div class="card-head"><h2>Activity log</h2><span class="muted">Last ${S.db.auditLog.length} changes</span></div>
@@ -3082,6 +3128,9 @@ const ACTIONS = {
   },
 
   'report-tab': ds => { S.ui.reportTab = ds.tab; rerender(); },
+  'fest-burst': () => burstCrackers(),
+  'fest-off': () => { lsSet(FEST_OFF_KEY, S.settings.festival?.since || 'on'); rerender(); toast('Crackers are off on this phone'); },
+  'fest-on': () => { lsSet(FEST_OFF_KEY, ''); rerender(); burstCrackers(); },
   'elec-measure': ds => { S.ui.elecMeasure = ds.m; rerender(); },
   'elec-graph': ds => { S.ui.reportTab = 'elec'; S.ui.elecView = ds.view; location.hash = '#/reports'; rerender(); },
   'rfy-prev': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), -12); rerender(); },
@@ -3151,6 +3200,14 @@ const FORMS = {
   },
   async renameCategory(fd) {
     await renameCategory(String(fd.get('from') || ''), String(fd.get('to') || '').trim());
+  },
+  async festival(fd) {
+    const on = fd.get('festOn') === 'on', until = String(fd.get('festUntil') || '');
+    if (on && until && until < todayISO()) throw new Error('The "Show until" day has already passed. Pick a later day or leave it empty.');
+    const prev = S.settings.festival || {};
+    const festival = { on, greeting: String(fd.get('festGreeting') || '').trim().slice(0, 80), until, since: on ? (prev.on && prev.since ? prev.since : new Date().toISOString()) : '' };
+    await saveSettings({ festival }, on ? 'Deepawali crackers switched on' : 'Deepawali crackers switched off');
+    await refresh(on ? 'Deepawali crackers are on for everyone' : 'Deepawali crackers are off');
   },
   async elec(fd) {
     const elecBillUrl = String(fd.get('elecBillUrl') || '').trim();

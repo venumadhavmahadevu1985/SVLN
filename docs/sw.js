@@ -5,7 +5,7 @@ const ENV = SCOPE.includes('/demo/') ? 'demo' : SCOPE.includes('/stage/') ? 'sta
 const PREFIX = `svln-paradise-${ENV}-`;
 const CACHE = `${PREFIX}v2`;
 const SHELL = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
-  'js/app.js', 'js/store.js', 'js/charts.js', 'js/util.js', 'js/config.js', 'js/i18n.js'];
+  'js/app.js', 'js/store.js', 'js/charts.js', 'js/crackers.js', 'js/util.js', 'js/config.js', 'js/i18n.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
