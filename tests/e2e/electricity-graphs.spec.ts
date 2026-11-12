@@ -1,14 +1,10 @@
-import { test, expect, RESIDENT } from '../fixtures';
+import { test, expect, RESIDENT, withDemoData } from '../fixtures';
 
 // Reports → Electricity: graphs of units / amount each month.
 // Common meter for every member; a flat's own graph for that flat; the treasurer can pick any flat or compare all.
 // Sample data (today 5 Nov 2026): common meter DEMO000COMMON (6 months, Jun 495 … Nov 232 units),
 // Flat 201 (half of that: Jun 248 … Nov 116 units, Nov ₹713 not paid).
-const withData = (page: any, change: (d: any) => void) => page.route('**/demo-data.json', async (route: any) => {
-  const d = await (await route.fetch()).json();
-  change(d);
-  await route.fulfill({ json: d });
-});
+const withData = withDemoData;
 const openElec = async (app: any) => {
   await app.go('reports');
   await app.main.getByRole('tab', { name: 'Electricity' }).click();

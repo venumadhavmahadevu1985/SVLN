@@ -1,13 +1,9 @@
-import { test, expect, RESIDENT } from '../fixtures';
+import { test, expect, RESIDENT, withDemoData } from '../fixtures';
 
 // Home: this month's electricity bill as an alert, for the flat's own meter and the common meter, until "Got it".
 // Sample data (today 5 Nov 2026): common meter DEMO000COMMON — Nov bill ₹1,427, 232 units, billed 2 Nov,
 // due 16 Nov, paid 4 Nov. Flat 201 — Nov ₹713 not paid. Latest recorded common bill: ₹1,565 on 31 Oct.
-const withData = (page: any, change: (d: any) => void) => page.route('**/demo-data.json', async (route: any) => {
-  const d = await (await route.fetch()).json();
-  change(d);
-  await route.fulfill({ json: d });
-});
+const withData = withDemoData;
 const alerts = (app: any) => app.main.locator('.elec-month');
 
 test.describe('Monthly electricity bill alert on Home', () => {

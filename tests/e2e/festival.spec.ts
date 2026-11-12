@@ -1,13 +1,9 @@
-import { test, expect, RESIDENT } from '../fixtures';
+import { test, expect, RESIDENT, withDemoData } from '../fixtures';
 
 // Deepawali crackers: the treasurer switches them on in Settings (optionally until a date); every member then
 // sees a greeting on Home and crackers bursting over the app. Each person can turn them off on their own phone.
 // (Today in the tests: 5 Nov 2026.)
-const withFestival = (page: any, festival: any) => page.route('**/demo-data.json', async (route: any) => {
-  const d = await (await route.fetch()).json();
-  d.collections.meta.find((m: any) => m.id === 'settings').festival = festival;
-  await route.fulfill({ json: d });
-});
+const withFestival = (page: any, festival: any) => withDemoData(page, d => { d.collections.meta.find((m: any) => m.id === 'settings').festival = festival; });
 const ON = { on: true, greeting: '', until: '', since: '2026-11-01T10:00:00.000Z' };
 const canvas = (page: any) => page.locator('canvas#crackers');
 const bursts = (page: any) => canvas(page).evaluate((c: HTMLCanvasElement) => Number(c.dataset.bursts));

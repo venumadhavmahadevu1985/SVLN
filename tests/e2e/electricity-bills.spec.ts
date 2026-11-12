@@ -1,14 +1,10 @@
-import { test, expect, RESIDENT } from '../fixtures';
+import { test, expect, RESIDENT, withDemoData } from '../fixtures';
 
 // Bills fetched nightly from Eastern Power (elecBills). Sample data (today 5 Nov 2026):
 //   common meter DEMO000COMMON — Nov bill ₹1,427, 232 units, due 16 Nov, paid 4 Nov
 //   Flat 201 (DEMO000201)       — Nov bill ₹713, 116 units, due 16 Nov, NOT paid
 // Change the sample data before the app loads it.
-const withData = (page: any, change: (d: any) => void) => page.route('**/demo-data.json', async (route: any) => {
-  const d = await (await route.fetch()).json();
-  change(d);
-  await route.fulfill({ json: d });
-});
+const withData = withDemoData;
 
 test.describe('Electricity bills from Eastern Power', () => {
   test('treasurer: each flat\'s current bill with paid / not paid; bill reminders for unpaid flats', async ({ app, page }) => {

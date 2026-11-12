@@ -25,7 +25,7 @@ test.describe('Resident (Flat 302)', () => {
     await app.recordPayment('302', '2026-11');
     await app.viewAs(RESIDENT);
     await app.go('dashboard');
-    await expect(app.main.locator('.banner.ok')).toContainText('Flat 302: all dues paid');
+    await expect(app.main.locator('.banner.ok', { hasText: 'all dues paid' })).toContainText('Flat 302: all dues paid');
   });
 
   test('My flat shows their details and lets them update them', async ({ app }) => {

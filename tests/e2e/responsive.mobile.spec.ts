@@ -1,4 +1,4 @@
-import { test, expect, RESIDENT } from '../fixtures';
+import { test, expect, RESIDENT, withDemoData } from '../fixtures';
 import type { Page } from '@playwright/test';
 
 // Runs in the "mobile" project (touch phone). Checks every page and the main dialogs at the smallest
@@ -164,10 +164,8 @@ for (const width of WIDTHS) {
     });
 
     test('Deepawali greeting and crackers fit the screen, in English and Telugu', async ({ app, page }) => {
-      await page.route('**/demo-data.json', async route => {
-        const d = await (await route.fetch()).json();
+      await withDemoData(page, d => {
         d.collections.meta.find((m: any) => m.id === 'settings').festival = { on: true, greeting: '', until: '2026-11-09', since: '2026-11-01T10:00:00.000Z' };
-        await route.fulfill({ json: d });
       });
       await app.open('dashboard', RESIDENT);
       await expect(app.main.locator('.fest-banner')).toBeVisible();

@@ -1,4 +1,5 @@
 import { test as base, expect, type Locator, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 // Every e2e test runs on the demo build with the clock frozen, so date rules (due / overdue,
 // current month, financial year) give the same answers on every run.
@@ -7,6 +8,13 @@ import { test as base, expect, type Locator, type Page } from '@playwright/test'
 export const TODAY = '2026-11-05T10:00:00+05:30';
 export const ADMIN = 'demo-admin';
 export const RESIDENT = 'demo-302';
+
+// Serve the sample data with a change, read straight from disk (fast and steady when many tests run at once).
+export const withDemoData = (page: Page, change: (d: any) => void) => page.route('**/demo-data.json', route => {
+  const d = JSON.parse(readFileSync('docs/demo-data.json', 'utf8'));
+  change(d);
+  return route.fulfill({ json: d });
+});
 
 export class App {
   constructor(readonly page: Page) {}
