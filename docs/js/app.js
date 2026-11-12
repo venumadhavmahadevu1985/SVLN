@@ -3,7 +3,7 @@
 import { ENV } from './config.js';
 import { store } from './store.js';
 import { barChart, donutChart } from './charts.js';
-import { startCrackers, stopCrackers, burstCrackers, reducedMotion } from './crackers.js';
+import { startCrackers, stopCrackers, showCrackers, burstCrackers, reducedMotion } from './crackers.js';
 import { getLang, setLang, startTelugu } from './i18n.js';
 import {
   esc, money, moneyShort, todayISO, curMonth, addMonths, monthsBetween, monthLabel, monthShort, dateLabel, dateTimeLabel,
@@ -578,7 +578,7 @@ function route() {
   S.route = r;
   if (changed) logEvent({ label: 'Opened page', action: '#/' + r });
   rerender();
-  if (changed) { window.scrollTo(0, 0); $view.focus({ preventScroll: true }); }
+  if (changed) { window.scrollTo(0, 0); $view.focus({ preventScroll: true }); showCrackers(); }
 }
 function rerender() {
   renderNav();
