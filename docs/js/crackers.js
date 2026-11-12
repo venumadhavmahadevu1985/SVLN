@@ -42,15 +42,22 @@ function explode(r) {
   canvas.dataset.bursts = String(Number(canvas.dataset.bursts || 0) + 1);
 }
 
+// The part of the canvas drawn on in the last frame: only that is cleared, not the whole screen.
+let box = null;
+const grow = (b, x, y) => { if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (x > b[2]) b[2] = x; if (y > b[3]) b[3] = y; };
 function frame(t) {
+  // About 30 frames a second: smooth enough for sparks, half the work of 60.
+  if (last && t - last < 30) { raf = requestAnimationFrame(frame); return; }
   const dt = Math.min((t - (last || t)) / 16.7, 3);
   last = t;
   if (performance.now() < showUntil && t >= nextLaunch) { launch(); nextLaunch = t + rand(700, 1500); }
-  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  if (box) ctx.clearRect(box[0] - 8, box[1] - 8, box[2] - box[0] + 16, box[3] - box[1] + 24);
+  box = null;
   // Show over and the sky is clear: stop drawing until the next show.
   if (!rockets.length && !sparks.length && performance.now() >= showUntil) { raf = 0; canvas.dataset.idle = '1'; return; }
   raf = requestAnimationFrame(frame);
-  canvas.dataset.idle = '';
+  if (canvas.dataset.idle) canvas.dataset.idle = '';
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
   ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over';
   for (let i = rockets.length - 1; i >= 0; i--) {
     const r = rockets[i];
@@ -59,6 +66,7 @@ function frame(t) {
     ctx.beginPath(); ctx.arc(r.x, r.y, 2.2, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(255,200,120,.5)';
     ctx.fillRect(r.x - 0.75, r.y + 3, 1.5, 9);
+    grow(b, r.x, r.y); grow(b, r.x, r.y + 12);
     if (r.y <= r.top || r.vy >= 0) { explode(r); rockets.splice(i, 1); }
   }
   ctx.lineCap = 'round';
@@ -75,7 +83,9 @@ function frame(t) {
     ctx.beginPath(); ctx.arc(s.x, s.y, 3.4, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = Math.max(s.life, 0); ctx.lineWidth = 2.4;
     ctx.beginPath(); ctx.moveTo(s.px, s.py); ctx.lineTo(s.x, s.y); ctx.stroke();
+    grow(b, s.x, s.y); grow(b, s.px, s.py);
   }
+  if (b[0] !== Infinity) box = b;
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 }
