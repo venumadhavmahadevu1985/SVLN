@@ -10,14 +10,14 @@ function readTheme() {
   dark = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) < 128;
   COLORS = dark ? BRIGHT : DEEP;
 }
-const MAX_SPARKS = 700;
+const MAX_SPARKS = 450;      // kept low so older phones stay smooth
 let canvas = null, ctx = null, raf = 0, last = 0, nextLaunch = 0, rockets = [], sparks = [], dpr = 1;
 
 export const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 export const crackersRunning = () => !!canvas;
 
 function size() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   canvas.width = Math.round(innerWidth * dpr);
   canvas.height = Math.round(innerHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -30,7 +30,7 @@ function launch(x = rand(innerWidth * 0.1, innerWidth * 0.9)) {
   rockets.push({ x, y: innerHeight + 4, vx: rand(-0.6, 0.6), vy: -rand(innerHeight * 0.011, innerHeight * 0.015) - 6, color: pick(COLORS), top: rand(innerHeight * 0.12, innerHeight * 0.45) });
 }
 function explode(r) {
-  const n = Math.min(70, Math.max(0, MAX_SPARKS - sparks.length)), c2 = pick(COLORS), ring = Math.random() < 0.35;
+  const n = Math.min(55, Math.max(0, MAX_SPARKS - sparks.length)), c2 = pick(COLORS), ring = Math.random() < 0.35;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rand(-0.05, 0.05), sp = ring ? 4.2 : rand(1, 5);
     sparks.push({ x: r.x, y: r.y, px: r.x, py: r.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: rand(0.010, 0.018), color: i % 3 ? r.color : c2 });
@@ -62,13 +62,14 @@ function frame(t) {
     s.x += s.vx * dt; s.y += s.vy * dt;
     s.life -= s.decay * dt;
     if (s.life <= 0) { sparks.splice(i, 1); continue; }
-    ctx.globalAlpha = Math.max(s.life, 0);
-    ctx.strokeStyle = ctx.fillStyle = s.color; ctx.lineWidth = 2.4;
-    ctx.shadowColor = s.color; ctx.shadowBlur = dark ? 0 : 6;
+    // A soft halo (a wider, faint dot) instead of a blur filter, which is costly on phones.
+    ctx.strokeStyle = ctx.fillStyle = s.color;
+    ctx.globalAlpha = Math.max(s.life, 0) * 0.28;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = Math.max(s.life, 0); ctx.lineWidth = 2.4;
     ctx.beginPath(); ctx.moveTo(s.px, s.py); ctx.lineTo(s.x, s.y); ctx.stroke();
-    ctx.beginPath(); ctx.arc(s.x, s.y, 1.6, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 }
 function onVisibility() {
