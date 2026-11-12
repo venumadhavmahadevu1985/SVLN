@@ -650,6 +650,7 @@ function viewDashboard() {
     ${!isAdmin() ? myProfileNudge() : ''}
     ${!isAdmin() ? myElecNudge() : ''}
     ${elecBanners()}
+    ${elecMonthAlerts()}
     ${isAdmin() ? profileSummaryCard() : ''}
     ${quickLinks()}
     <section class="kpis">
@@ -1638,6 +1639,56 @@ function elecBanners() {
     .map(({ m, st }) => `<a class="banner ${st.cls} elec-banner" href="#/dues" data-action="open-elec">${icon('wallet')}<div>
       <strong>Common electricity bill ${money(Math.round(st.bill.amount))} · ${esc(st.label)}</strong>
       <span>${esc(m.label || 'Common meter')} · ${esc(monthLabel(st.bill.month, true))} · ${st.bill.units} units · not paid yet</span></div></a>`).join('');
+}
+
+// Home: this month's electricity bill as an alert, for the flat's own meter and the common meter.
+// Shown when a new bill arrives (billed in the last 35 days) until the person taps "Got it" on that phone.
+// An unpaid bill of the flat's own is already a reminder above (elecBanners), so only a paid one appears here;
+// before the nightly data exists, the common bill comes from the electricity bills recorded in Expenses.
+const ELEC_SEEN_KEY = 'svln-elec-seen';
+const elecSeen = () => { try { return JSON.parse(lsGet(ELEC_SEEN_KEY) || '[]'); } catch { return []; } };
+const elecFresh = d => !!d && d <= todayISO() && d >= addDays(todayISO(), -35);
+function elecMonthBanner({ key, cls, title, line, btns = '', view }) {
+  return `<div class="banner ${cls} elec-month" data-elec-alert="${esc(key)}">${icon('wallet')}<div>
+    <strong>${esc(title)}</strong><span>${esc(line)}</span>
+    <div class="row-btns">${btns}${view ? `<button type="button" class="btn sm ghost" data-action="elec-graph" data-view="${esc(view)}">${icon('chart')}<span>Graph</span></button>` : ''}
+      <button type="button" class="btn sm ghost" data-action="elec-seen" data-key="${esc(key)}"><span>Got it</span></button></div></div></div>`;
+}
+function elecMonthAlerts() {
+  const seen = elecSeen(), out = [];
+  const billAlert = (b, who, view, canPay) => {
+    const st = elecStatus(b);
+    if (!st || !elecFresh(st.bill.billDate)) return;
+    const key = `${b.scno}:${st.bill.month}`;
+    if (seen.includes(key)) return;
+    const paid = st.key === 'paid';
+    out.push(elecMonthBanner({ key, view, cls: paid ? 'ok' : st.cls,
+      title: `${who} · ${monthLabel(st.bill.month, true)}: ${money(Math.round(st.bill.amount))}`,
+      line: `${st.bill.units} units${st.bill.dueDate ? ` · due ${dateLabel(st.bill.dueDate)}` : ''} · ${st.label}`,
+      btns: (st.bill.ebill ? `<a class="btn sm ghost" href="${esc(st.bill.ebill)}" target="_blank" rel="noopener">${icon('receipt')}<span>View this bill</span></a>` : '')
+        + (!paid && canPay ? elecBillLink(b.scno, 'Pay now', 'btn sm primary') : '') }));
+  };
+  // The flat's own bill (paid ones; unpaid ones are the reminder above).
+  if (!isAdmin()) {
+    const f = flatById(S.user.flatId), b = f && flatElec(f);
+    if (b && elecStatus(b)?.key === 'paid') billAlert(b, 'Your electricity bill', 'flat:' + f.id, true);
+  }
+  // The common meter(s): every member. The treasurer's urgent unpaid reminder (elecBanners) already covers that case.
+  const meters = commonMeters().filter(m => commonElecBills(m));
+  for (const m of meters) {
+    const st = elecStatus(commonElecBills(m));
+    if (isAdmin() && st && st.key !== 'paid' && st.days !== null && st.days <= 7) continue;
+    billAlert(commonElecBills(m), `Common electricity bill${m.label ? ` (${m.label})` : ''}`, 'common:' + m.no, isAdmin());
+  }
+  // No nightly data yet: the latest common bill recorded in Expenses.
+  if (!meters.length) {
+    const e = elecExpenses()[0];
+    const key = e && 'expense:' + e.id;
+    if (e && elecFresh(e.date) && !seen.includes(key)) out.push(elecMonthBanner({ key, cls: 'info', view: 'common:expenses',
+      title: `Common electricity bill · ${monthLabel(e.date.slice(0, 7), true)}: ${money(e.amount)}`,
+      line: `${e.units ? `${e.units} units · ` : ''}paid on ${dateLabel(e.date)}${e.mode ? ` (${e.mode})` : ''}` }));
+  }
+  return out.join('');
 }
 
 function elecCard(f) {
@@ -3132,6 +3183,7 @@ const ACTIONS = {
   'fest-off': () => { lsSet(FEST_OFF_KEY, S.settings.festival?.since || 'on'); rerender(); toast('Crackers are off on this phone'); },
   'fest-on': () => { lsSet(FEST_OFF_KEY, ''); rerender(); burstCrackers(); },
   'elec-measure': ds => { S.ui.elecMeasure = ds.m; rerender(); },
+  'elec-seen': ds => { lsSet(ELEC_SEEN_KEY, JSON.stringify([...elecSeen(), ds.key].slice(-40))); rerender(); },
   'elec-graph': ds => { S.ui.reportTab = 'elec'; S.ui.elecView = ds.view; location.hash = '#/reports'; rerender(); },
   'rfy-prev': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), -12); rerender(); },
   'rfy-next': () => { S.ui.reportFy = addMonths(S.ui.reportFy || fyStart(curMonth(), S.settings.fyStartMonth), 12); rerender(); },

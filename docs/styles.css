@@ -654,3 +654,6 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 .fest-banner span { color: #fbe9c6; }
 .fest-banner .btn.ghost { color: #fff7e0; border-color: rgba(255, 224, 138, .6); background: transparent; }
 .fest-diyas { font-size: 30px; line-height: 1; filter: drop-shadow(0 0 6px #ffb300); }
+
+/* Monthly electricity bill alert */
+.elec-month .row-btns { margin-top: 6px; }
