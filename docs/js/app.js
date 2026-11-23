@@ -651,6 +651,7 @@ function viewDashboard() {
     ${!isAdmin() ? myElecNudge() : ''}
     ${elecBanners()}
     ${elecMonthAlerts()}
+    ${waterCard()}
     ${isAdmin() ? profileSummaryCard() : ''}
     ${quickLinks()}
     <section class="kpis">
@@ -712,17 +713,17 @@ function quickLinks() {
 
 // Start a new expense from the last one with the same name: same category, vendor, mode and
 // amount, the month in the description moved to this month. Staff (e.g. the watchman) open Pay salary.
-function openQuickExpense(label) {
-  const st = quickStaff(label);
+function openQuickExpense(label, find = lastQuickExpense, amount = 0) {
+  const st = find === lastQuickExpense && quickStaff(label);
   if (st) return payStaffModal(st);
-  const last = lastQuickExpense(label);
+  const last = find(label);
   const thisMonth = MONTH_NAMES[Number(curMonth().slice(5)) - 1];
   const draft = last
-    ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: last.amount,
+    ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: amount || last.amount,
         description: last.description.replace(new RegExp(`\\b(${MONTH_NAMES.join('|')})\\b`, 'g'), thisMonth) }
-    : { description: label, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
+    : { description: label, amount: amount || undefined, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
   // Already added this month: say so, so the same bill is not entered twice by mistake.
-  const done = lastQuickExpense(label, curMonth());
+  const done = find(label, curMonth());
   openModal(`Add expense · ${label}`, (done ? `<div class="banner warn quick-dup">${icon('receipt')}<div><strong>Already added this month: ${money(done.amount)} on ${dateLabel(done.date)}</strong>
     <span>${esc(done.description)}. Save only if this is another bill.</span></div></div>` : '') + expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
 }
@@ -1929,6 +1930,70 @@ function flatAlertModal(flatId) {
   });
 }
 
+// ----- common water bill (GVMC, one connection for the whole building, paid by the society) -----
+// Settings hold the assessment number, due day and pay link; "paid" comes from the water bill
+// expenses the treasurer records, so every member sees the same status and nothing is stored twice.
+// GVMC's dues page needs a captcha, so the app cannot read the bill itself: Pay now copies the
+// assessment number and opens the GVMC page, and Mark paid adds the expense.
+const DEFAULT_WATER_PAY_URL = 'https://www.gvmc.gov.in/waterTaxDueDetails.htm?_getWaterTaxDues';
+const water = () => S.settings.water || {};
+const waterPayUrl = () => typeof water().payUrl === 'string' ? water().payUrl : DEFAULT_WATER_PAY_URL;
+// A water bill expense: category or description starting with "Water" / "Municipal water".
+// Not festival mamullu given to the water supply staff, and not a water tanker bought separately.
+const isWaterBill = e => !/tanker/.test(lc(e.description))
+  && (/^water\b/.test(lc(e.category)) || /^(municipal |gvmc )?water\b/.test(lc(e.description)));
+const waterPaid = (_label, inMonth) => S.db.expenses.filter(e => isWaterBill(e) && (!inMonth || e.date.startsWith(inMonth))).sort((a, b) => byExpenseOrder(b, a))[0];
+function waterStatus() {
+  const cm = curMonth(), paid = waterPaid('', cm), day = Math.trunc(Number(water().dueDay)) || 0;
+  if (paid) return { key: 'paid', cls: 'ok', text: `Paid ${money(paid.amount)} on ${dateLabel(paid.date)}`, paid };
+  if (!day) return { key: 'due', cls: 'warn', text: 'Not paid yet this month' };
+  const due = `${cm}-${pad(Math.min(day, lastDay(cm)))}`, n = daysUntil(due);
+  if (n < 0) return { key: 'overdue', cls: 'bad', text: `Overdue by ${-n} day${n === -1 ? '' : 's'} (due ${dateLabel(due)})`, due };
+  return { key: 'due', cls: 'warn', text: n === 0 ? 'Due today' : `Due by ${dateLabel(due)} · in ${n} day${n === 1 ? '' : 's'}`, due };
+}
+const waterPayLink = (label, cls) => waterPayUrl() ? `<a class="${cls}" href="${esc(waterPayUrl())}" target="_blank" rel="noopener" data-pay${water().assessmentNo ? ` data-copy="${esc(water().assessmentNo)}"` : ''}>${icon('wallet')}<span>${label}</span></a>` : '';
+
+// Home, for every member: this month's status, the assessment number and the last 6 months.
+function waterCard() {
+  const w = water();
+  if (!w.assessmentNo) return '';
+  const st = waterStatus(), cm = curMonth(), months = Array.from({ length: 6 }, (_, i) => addMonths(cm, -i));
+  return `<section class="card water-card" aria-label="Common water bill">
+    <div class="card-head"><h2>Common water bill</h2><span class="badge ${st.cls}">${esc(st.text)}</span></div>
+    <dl class="details">
+      <div><dt>GVMC assessment number</dt><dd><strong class="mono water-no">${esc(w.assessmentNo)}</strong></dd></div>
+      ${w.amount && st.key !== 'paid' ? `<div><dt>Bill amount</dt><dd><strong class="due-amt${st.key === 'overdue' ? ' late' : ''}">${money(w.amount)}</strong></dd></div>` : ''}
+    </dl>
+    <div class="list water-months">${months.map(m => {
+      const e = waterPaid('', m);
+      return `<div class="pending-row" data-water-month="${m}"><div class="row-main"><strong>${esc(monthLabel(m, true))}</strong>${e ? `<small>${esc(dateLabel(e.date))}${e.mode ? ' · ' + esc(e.mode) : ''}</small>` : ''}</div>
+        ${e ? `<span class="badge ok">Paid ${money(e.amount)}</span>` : `<span class="badge ${m === cm ? st.cls : 'later'}">${m === cm ? 'Not paid yet' : 'Not recorded'}</span>`}</div>`;
+    }).join('')}</div>
+    ${isAdmin() ? `<div class="row-btns">
+      ${st.key === 'paid' ? '' : waterPayLink('Pay now', 'btn sm primary')}
+      <button type="button" class="btn sm ghost" data-action="water-paid">${st.key === 'paid' ? 'Add another water bill' : 'Mark paid'}</button>
+      ${waterPayUrl() && st.key === 'paid' ? waterPayLink('Open GVMC page', 'btn sm ghost') : ''}</div>
+      <p class="hint">Pay now copies the assessment number — paste it on the GVMC page. After paying, tap Mark paid to add it to Expenses.</p>`
+      : '<p class="hint">One water connection for the whole building, paid by the society. The treasurer marks it paid.</p>'}
+  </section>`;
+}
+
+function waterSettings() {
+  const w = water();
+  return `<form class="card stack" data-form="water">
+    <h2>Common water bill</h2>
+    <p class="hint">The building's GVMC water connection. Once the assessment number is added, every member sees the water bill and whether this month's bill is paid on Home.</p>
+    <div class="form-grid">
+      <label class="field"><span>GVMC assessment number</span><input name="waterAssessmentNo" maxlength="40" autocomplete="off" value="${esc(w.assessmentNo || '')}" placeholder="e.g. MA01234-1"></label>
+      <label class="field"><span>Due day each month</span><input type="number" name="waterDueDay" min="1" max="31" value="${esc(w.dueDay || '')}" placeholder="Not set"></label>
+      <label class="field"><span>Bill amount (₹)</span><input type="number" name="waterAmount" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(w.amount || '')}" placeholder="Optional">
+        <small class="muted">Shown while unpaid and filled in on Mark paid. Update it when the bill changes.</small></label>
+      <label class="field span2"><span>Online payment link</span><input type="url" name="waterPayUrl" maxlength="300" value="${esc(waterPayUrl())}" placeholder="https://…">
+        <small class="muted">Opens when the treasurer taps Pay now (the assessment number is copied first). Leave empty to hide the button.</small></label></div>
+    <div><button class="btn primary">Save</button></div>
+  </form>`;
+}
+
 // ----- house tax (each flat pays its own; assessment number, bill and paid status are private) -----
 // Due dates come from Settings (two half-years); reminders count from the month tracking started.
 const TAX_DOC_MAX = 650 * 1024;   // PDFs; photos are shrunk to fit a Firestore document
@@ -2826,6 +2891,7 @@ function viewSettings() {
     ${renameCategoryCard()}
     ${houseTaxSettings()}
     ${elecSettings()}
+    ${waterSettings()}
     ${festivalSettings()}
     ${membersCard()}
     <div class="card">
@@ -3077,6 +3143,7 @@ const ACTIONS = {
 
   'add-expense': () => openModal('Add expense', expenseForm(), { onSubmit: fd => submitExpense(fd) }),
   'quick-expense': ds => openQuickExpense(quickList()[+ds.i]),
+  'water-paid': () => openQuickExpense('Water bill', waterPaid, water().amount),
   'usage-days': ds => { S.ui.usageDays = +ds.days; rerender(); },
   'usage-refresh': () => { S.usage = null; rerender(); },
   'usage-clear': () => clearOldUsage(),
@@ -3266,6 +3333,14 @@ const FORMS = {
     if (elecBillUrl && !/^https:\/\/\S+$/.test(elecBillUrl)) throw new Error('The bill page link must start with https://');
     await saveSettings({ commonElec: String(fd.get('commonElec') || '').trim(), elecBillUrl }, 'Electricity settings updated');
     await refresh('Electricity settings saved');
+  },
+  async water(fd) {
+    const payUrl = String(fd.get('waterPayUrl') || '').trim(), dueDay = Math.trunc(Number(fd.get('waterDueDay'))) || 0, amount = Math.round(Number(fd.get('waterAmount'))) || 0;
+    if (payUrl && !/^https:\/\/\S+$/.test(payUrl)) throw new Error('The payment link must start with https://');
+    if (dueDay < 0 || dueDay > 31) throw new Error('Due day must be between 1 and 31.');
+    if (amount < 0 || amount > 1000000) throw new Error('Enter the bill amount in rupees (0 to 10,00,000).');
+    await saveSettings({ water: { assessmentNo: String(fd.get('waterAssessmentNo') || '').trim(), dueDay, amount, payUrl } }, 'Water bill settings updated');
+    await refresh('Water bill settings saved');
   },
   async houseTax(fd) {
     const houseTaxDue = ['1st half-year', '2nd half-year'].map((label, i) => ({ label, month: Number(fd.get('taxMonth' + i)) || 0, day: Number(fd.get('taxDay' + i)) || 0 }));

@@ -657,3 +657,11 @@ a.tax-no { color: var(--brand); font-weight: 700; text-decoration: underline; te
 
 /* Monthly electricity bill alert */
 .elec-month .row-btns { margin-top: 6px; }
+/* Common water bill (Home, every member) */
+.water-card .water-months { margin-top: 10px; }
+.water-card .pending-row { gap: 8px 10px; flex-wrap: wrap; }
+.water-card .badge { white-space: normal; max-width: 100%; }
+.water-card .row-btns { margin-top: 12px; }
+.water-card .due-amt { font-size: 18px; color: var(--warn, var(--text)); }
+.water-card .due-amt.late { color: var(--bad); }
+.water-card .water-no { font-size: 16px; letter-spacing: .02em; }
