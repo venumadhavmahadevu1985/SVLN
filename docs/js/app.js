@@ -713,18 +713,18 @@ function quickLinks() {
 
 // Start a new expense from the last one with the same name: same category, vendor, mode and
 // amount, the month in the description moved to this month. Staff (e.g. the watchman) open Pay salary.
-function openQuickExpense(label, find = lastQuickExpense, amount = 0) {
+function openQuickExpense(label, find = lastQuickExpense, amount = 0, date = '') {
   const st = find === lastQuickExpense && quickStaff(label);
   if (st) return payStaffModal(st);
   const last = find(label);
-  const thisMonth = MONTH_NAMES[Number(curMonth().slice(5)) - 1];
+  const thisMonth = MONTH_NAMES[Number((date || curMonth()).slice(5, 7)) - 1];
   const draft = last
-    ? { category: last.category, vendor: last.vendor, mode: last.mode, amount: amount || last.amount,
+    ? { date, category: last.category, vendor: last.vendor, mode: last.mode, amount: amount || last.amount,
         description: last.description.replace(new RegExp(`\\b(${MONTH_NAMES.join('|')})\\b`, 'g'), thisMonth) }
-    : { description: label, amount: amount || undefined, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
+    : { date, description: label, amount: amount || undefined, category: categoryList().find(c => lc(c).startsWith(lc(label).split(' ')[0])) || '' };
   // Already added this month: say so, so the same bill is not entered twice by mistake.
-  const done = find(label, curMonth());
-  openModal(`Add expense · ${label}`, (done ? `<div class="banner warn quick-dup">${icon('receipt')}<div><strong>Already added this month: ${money(done.amount)} on ${dateLabel(done.date)}</strong>
+  const done = find(label, (date || curMonth()).slice(0, 7));
+  openModal(`Add expense · ${label}`, (done ? `<div class="banner warn quick-dup">${icon('receipt')}<div><strong>Already added ${date ? 'for ' + esc(monthLabel(date.slice(0, 7), true)) : 'this month'}: ${money(done.amount)} on ${dateLabel(done.date)}</strong>
     <span>${esc(done.description)}. Save only if this is another bill.</span></div></div>` : '') + expenseForm(draft), { onSubmit: fd => submitExpense(fd) });
 }
 
@@ -903,11 +903,11 @@ const billingSummary = () => {
 
 function duesAdmin() {
   const tab = S.ui.duesTab;
-  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax'], ['elec', 'Electricity']];
+  const tabs = [['grid', 'Who has paid'], ['pending', 'Pending dues'], ['flats', 'Flats & amount'], ['split', 'Split expenses'], ['tax', 'House tax'], ['elec', 'Electricity'], ['water', 'Water bill']];
   return `
     <div class="page-head"><div><h1>Maintenance dues</h1><p class="muted">${billingSummary()}</p></div></div>
     <div class="seg" role="tablist">${tabs.map(([id, l]) => `<button role="tab" aria-selected="${tab === id}" class="${tab === id ? 'active' : ''}" data-action="dues-tab" data-tab="${id}">${l}</button>`).join('')}</div>
-    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : tab === 'elec' ? duesElec() : duesFlats()}`;
+    ${tab === 'grid' ? duesGrid() : tab === 'pending' ? duesPending() : tab === 'tax' ? duesTax() : tab === 'split' ? duesSplit() : tab === 'elec' ? duesElec() : tab === 'water' ? duesWater() : duesFlats()}`;
 }
 
 function duesGrid() {
@@ -1036,6 +1036,7 @@ function duesResident() {
     ${flatAlertBanner(f.id)}
     ${taxOwed(f.id) ? houseTaxCard(f) + flatDetailsCard(f) : flatDetailsCard(f) + houseTaxCard(f)}
     ${elecCard(f)}
+    ${waterCard()}
     <h2 class="section-title">Maintenance dues</h2>
     ${o.total > 0
       ? `<div class="banner warn">${icon('wallet')}<div><strong>${money(o.total)} pending</strong><span>${o.months.map(x => monthLabel(x.mk, true)).join(', ')}</span></div></div>`
@@ -1966,7 +1967,7 @@ function waterCard() {
     </dl>
     <div class="list water-months">${months.map(m => {
       const e = waterPaid('', m);
-      return `<div class="pending-row" data-water-month="${m}"><div class="row-main"><strong>${esc(monthLabel(m, true))}</strong>${e ? `<small>${esc(dateLabel(e.date))}${e.mode ? ' · ' + esc(e.mode) : ''}</small>` : ''}</div>
+      return `<div class="water-row" data-water-month="${m}"><div class="row-main"><strong>${esc(monthLabel(m, true))}</strong>${e ? `<small>${esc(dateLabel(e.date))}${e.mode ? ' · ' + esc(e.mode) : ''}</small>` : ''}</div>
         ${e ? `<span class="badge ok">Paid ${money(e.amount)}</span>` : `<span class="badge ${m === cm ? st.cls : 'later'}">${m === cm ? 'Not paid yet' : 'Not recorded'}</span>`}</div>`;
     }).join('')}</div>
     ${isAdmin() ? `<div class="row-btns">
@@ -1976,6 +1977,33 @@ function waterCard() {
       <p class="hint">Pay now copies the assessment number — paste it on the GVMC page. After paying, tap Mark paid to add it to Expenses.</p>`
       : '<p class="hint">One water connection for the whole building, paid by the society. The treasurer marks it paid.</p>'}
   </section>`;
+}
+
+const lastDayISO = m => `${m}-${pad(lastDay(m))}`;
+
+// Dues → Water bill (treasurer): the Home card plus every month of the financial year, with the
+// bill paid in that month and Add bill for a month that has none (dated the last day of that month).
+function duesWater() {
+  if (!water().assessmentNo) return `<div class="card stack"><h2>Common water bill</h2>
+    <p class="muted">Add the building's GVMC water assessment number to track the water bill here and show it to every member on Home.</p>
+    <div><a class="btn primary" href="#/settings">Add in Settings</a></div></div>`;
+  const s = S.settings, cm = curMonth(), fy = S.ui.fy || fyStart(cm, s.fyStartMonth);
+  const months = monthsBetween([fy, s.startMonth].sort().pop(), [addMonths(fy, 11), cm].sort()[0]).reverse();
+  const rows = months.map(m => ({ m, e: waterPaid('', m) })), total = sum(rows, r => r.e?.amount || 0), paidN = rows.filter(r => r.e).length;
+  return `${waterCard()}
+    <div class="card water-year">
+      <div class="card-head">${fyNav(fy, 'fy-prev', 'fy-next')}<span class="muted">${paidN} of ${months.length} month${months.length === 1 ? '' : 's'} paid · ${money(total)}</span></div>
+      ${months.length ? `<div class="table-scroll"><table class="data water-table">
+        <thead><tr><th scope="col">Month</th><th scope="col">Paid on</th><th scope="col">Mode</th><th scope="col" class="num">Amount</th><th scope="col"></th></tr></thead>
+        <tbody>${rows.map(({ m, e }) => `<tr data-water-row="${m}"><th scope="row">${esc(monthLabel(m, true))}</th>
+          <td>${e ? esc(dateLabel(e.date)) : `<span class="badge ${m === cm ? waterStatus().cls : 'later'}">${m === cm ? 'Not paid yet' : 'Not recorded'}</span>`}</td>
+          <td>${e ? esc(e.mode || '') : ''}</td><td class="num">${e ? money(e.amount) : '—'}</td>
+          <td>${e ? `<button type="button" class="btn sm ghost" data-action="view-expense" data-id="${esc(e.id)}">View</button>`
+            : `<button type="button" class="btn sm ${m === cm ? 'primary' : 'ghost'}" data-action="water-paid" data-month="${m}">${m === cm ? 'Mark paid' : 'Add bill'}</button>`}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><th scope="row">Total</th><td colspan="2"></td><td class="num">${money(total)}</td><td></td></tr></tfoot>
+      </table></div>` : empty('No months to show for this year.')}
+      <p class="hint">A bill counts in the month of its expense date. Add bill for an earlier month dates it the last day of that month.</p>
+    </div>`;
 }
 
 function waterSettings() {
@@ -3143,7 +3171,7 @@ const ACTIONS = {
 
   'add-expense': () => openModal('Add expense', expenseForm(), { onSubmit: fd => submitExpense(fd) }),
   'quick-expense': ds => openQuickExpense(quickList()[+ds.i]),
-  'water-paid': () => openQuickExpense('Water bill', waterPaid, water().amount),
+  'water-paid': ds => openQuickExpense('Water bill', waterPaid, water().amount, ds.month && ds.month < curMonth() ? lastDayISO(ds.month) : ''),
   'usage-days': ds => { S.ui.usageDays = +ds.days; rerender(); },
   'usage-refresh': () => { S.usage = null; rerender(); },
   'usage-clear': () => clearOldUsage(),

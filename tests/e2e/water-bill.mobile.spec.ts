@@ -17,3 +17,11 @@ for (const width of [320, 390]) {
     }
   });
 }
+
+test('Dues → Water bill fits a 320 px phone (the table scrolls inside its card)', async ({ app, page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await app.open();
+  await app.duesTab('Water bill');
+  await expect(app.main.locator('.water-table')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});

@@ -73,7 +73,7 @@ export class App {
   // ----- dues -----
   cell(flat: string, month: string): Locator { return this.main.locator(`button.cell[data-flat="${flat}"][data-month="${month}"]`); }
 
-  async duesTab(name: 'Who has paid' | 'Pending dues' | 'Flats & amount' | 'Split expenses' | 'House tax' | 'Electricity') {
+  async duesTab(name: 'Who has paid' | 'Pending dues' | 'Flats & amount' | 'Split expenses' | 'House tax' | 'Electricity' | 'Water bill') {
     await this.go('dues');
     await this.main.getByRole('tab', { name }).click();
   }

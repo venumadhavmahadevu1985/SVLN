@@ -178,4 +178,77 @@ test.describe('Common water bill', () => {
     await expect(card(app).getByRole('heading')).toHaveText('ఉమ్మడి నీటి బిల్లు');
     await expect(card(app).locator('.card-head .badge')).toHaveText('20 నవం 2026 లోగా · ఇంకా 15 రోజులు');
   });
+
+  // ----- Dues → Water bill tab, and My flat -----
+  const yearTable = (app: any) => app.main.locator('.water-table');
+
+  test('Dues → Water bill lists every month since tracking started, with what was paid', async ({ app }) => {
+    await app.open();
+    await app.duesTab('Water bill');
+    await expect(card(app)).toBeVisible();
+    await expect(app.main.locator('.water-year .card-head')).toContainText('1 of 2 months paid · ₹645');
+    await expect(yearTable(app).locator('tbody tr')).toHaveCount(2);           // tracking starts Oct 2026
+    await expect(yearTable(app).locator('tbody tr').first()).toContainText('November 2026');
+    await expect(yearTable(app).locator('[data-water-row="2026-10"]')).toContainText('31 Oct 2026');
+    await expect(yearTable(app).locator('[data-water-row="2026-10"]')).toContainText('Cash');
+    await expect(yearTable(app).locator('[data-water-row="2026-10"]')).toContainText('₹645');
+    await expect(yearTable(app).locator('[data-water-row="2026-11"]').getByRole('button')).toHaveText('Mark paid');
+    await expect(yearTable(app).locator('tfoot')).toContainText('₹645');
+    await expect(app.main.locator('.water-year').getByRole('button', { name: 'Previous year' })).toBeDisabled();
+  });
+
+  test('View opens that month\'s water expense', async ({ app }) => {
+    await app.open();
+    await app.duesTab('Water bill');
+    await yearTable(app).locator('[data-water-row="2026-10"]').getByRole('button', { name: 'View' }).click();
+    await expect(app.modal).toContainText('Municipal water');
+    await expect(app.modal).toContainText('₹645');
+  });
+
+  test('Add bill for an earlier month is dated that month and fills its row', async ({ app }) => {
+    await app.open('expenses');
+    await app.expenseRow('Municipal water').click();
+    await app.modal.getByRole('button', { name: 'Delete' }).click();
+    await app.expectToast('Expense deleted');
+    await app.duesTab('Water bill');
+    await expect(app.main.locator('.water-year .card-head')).toContainText('0 of 2 months paid · ₹0');
+    await yearTable(app).locator('[data-water-row="2026-10"]').getByRole('button', { name: 'Add bill' }).click();
+    await expect(app.field('Date')).toHaveValue('2026-10-31');
+    await expect(app.modal.locator('.quick-dup')).toHaveCount(0);
+    await app.submitModal();
+    await app.expectToast('Expense added');
+    await expect(yearTable(app).locator('[data-water-row="2026-10"]')).toContainText('31 Oct 2026');
+    await expect(app.main.locator('.water-year .card-head')).toContainText('1 of 2 months paid · ₹645');
+    await expect(card(app).locator('.card-head .badge')).toHaveText(/^Due by/);   // this month still unpaid
+  });
+
+  test('Mark paid from the Dues tab marks this month paid there and on Home', async ({ app }) => {
+    await app.open();
+    await app.duesTab('Water bill');
+    await yearTable(app).locator('[data-water-row="2026-11"]').getByRole('button', { name: 'Mark paid' }).click();
+    await expect(app.field('Date')).toHaveValue('2026-11-05');
+    await app.submitModal();
+    await app.expectToast('Expense added');
+    await expect(yearTable(app).locator('[data-water-row="2026-11"]')).toContainText('5 Nov 2026');
+    await expect(app.main.locator('.water-year .card-head')).toContainText('2 of 2 months paid · ₹1,290');
+    await app.go('dashboard');
+    await expect(card(app).locator('.card-head .badge')).toHaveText('Paid ₹645 on 5 Nov 2026');
+  });
+
+  test('without an assessment number the tab points to Settings', async ({ app }) => {
+    await app.open();
+    await saveWater(app, { no: '' });
+    await app.duesTab('Water bill');
+    await expect(app.main).toContainText('Add the building\'s GVMC water assessment number');
+    await app.main.getByRole('link', { name: 'Add in Settings' }).click();
+    await expect(app.heading).toHaveText('Settings');
+  });
+
+  test('residents see the common water bill on My flat too, without treasurer buttons', async ({ app }) => {
+    await app.open('dues', RESIDENT);
+    await expect(card(app)).toBeVisible();
+    await expect(card(app)).toContainText('MA00000-1');
+    await expect(card(app).getByRole('button')).toHaveCount(0);
+    await expect(app.main.getByRole('tab', { name: 'Water bill' })).toHaveCount(0);
+  });
 });

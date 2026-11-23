@@ -124,7 +124,7 @@ const TE = {
   'Save a backup automatically once a day on this device (the first time I open the app)': 'ఈ పరికరంలో రోజుకు ఒకసారి ఆటోమేటిక్‌గా బ్యాకప్ సేవ్ చేయండి (రోజులో మొదటిసారి యాప్ తెరిచినప్పుడు)',
   'No backup taken yet.': 'ఇంకా బ్యాకప్ తీసుకోలేదు.', 'Backup saved': 'బ్యాకప్ సేవ్ అయింది',
   'Daily backup is on for this device': 'ఈ పరికరంలో రోజువారీ బ్యాకప్ ఆన్‌లో ఉంది', 'Daily backup is off for this device': 'ఈ పరికరంలో రోజువారీ బ్యాకప్ ఆఫ్‌లో ఉంది',
-  'Common water bill': 'ఉమ్మడి నీటి బిల్లు', 'GVMC assessment number': 'GVMC అసెస్‌మెంట్ నంబర్', 'Bill amount': 'బిల్లు మొత్తం',
+  'Common water bill': 'ఉమ్మడి నీటి బిల్లు', 'Water bill': 'నీటి బిల్లు', 'Add bill': 'బిల్లు చేర్చండి', 'Add in Settings': 'సెట్టింగ్‌లలో చేర్చండి', 'GVMC assessment number': 'GVMC అసెస్‌మెంట్ నంబర్', 'Bill amount': 'బిల్లు మొత్తం',
   'Not recorded': 'నమోదు కాలేదు', 'Not paid yet this month': 'ఈ నెల ఇంకా చెల్లించలేదు', 'Add another water bill': 'మరో నీటి బిల్లు చేర్చండి', 'Open GVMC page': 'GVMC పేజీ తెరవండి',
   'One water connection for the whole building, paid by the society. The treasurer marks it paid.': 'భవనం మొత్తానికి ఒకే నీటి కనెక్షన్, సొసైటీ చెల్లిస్తుంది. కోశాధికారి చెల్లించినట్లు గుర్తిస్తారు.',
   'Electricity bill': 'కరెంట్ బిల్లు', 'Electricity': 'కరెంట్', 'Service Number': 'సర్వీస్ నంబర్', 'Add Service Number': 'సర్వీస్ నంబర్ చేర్చండి',
