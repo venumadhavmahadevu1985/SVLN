@@ -90,7 +90,8 @@
           { "label": "1st half-year", "month": 6, "day": 30 },
           { "label": "2nd half-year", "month": 11, "day": 15 }
         ],
-        "houseTaxRemindDays": 30
+        "houseTaxRemindDays": 30,
+        "water": { "assessmentNo": "MA00000-1", "dueDay": 20, "amount": 645 }
       },
       {
         "id": "collections",

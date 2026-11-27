@@ -73,7 +73,7 @@ export class App {
   // ----- dues -----
   cell(flat: string, month: string): Locator { return this.main.locator(`button.cell[data-flat="${flat}"][data-month="${month}"]`); }
 
-  async duesTab(name: 'Who has paid' | 'Pending dues' | 'Flats & amount' | 'Split expenses' | 'House tax' | 'Electricity') {
+  async duesTab(name: 'Who has paid' | 'Pending dues' | 'Flats & amount' | 'Split expenses' | 'House tax' | 'Electricity' | 'Water bill') {
     await this.go('dues');
     await this.main.getByRole('tab', { name }).click();
   }
@@ -106,6 +106,13 @@ export class App {
 export const test = base.extend<{ app: App }>({
   app: async ({ page, context }, use) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    // Payment and bill pages (GVMC, BillDesk, Eastern Power) open in a new tab. Never load the real
+    // sites: a slow or blocked site would make tests fail on the CI runner. Any page outside the
+    // local test server gets a stub; a test's own context.route() for a site still wins (newest first).
+    await context.route(u => !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(u.href), route =>
+      route.request().resourceType() === 'document'
+        ? route.fulfill({ status: 200, contentType: 'text/html', body: '<title>External page (test stub)</title>' })
+        : route.continue());
     await page.clock.setFixedTime(new Date(TODAY));
     page.on('dialog', d => d.accept());
     await page.addInitScript(() => { (window as any).print = () => { (window as any).__printed = true; }; });
